@@ -56,6 +56,21 @@ class User extends Authenticatable
         return $this->hasOne(BusinessProfile::class);
     }
 
+    public function borrowers()
+    {
+        return $this->hasMany(Borrower::class);
+    }
+
+    public function loans()
+    {
+        return $this->hasMany(Loan::class);
+    }
+
+    public function transactions()
+    {
+        return $this->hasMany(Transaction::class);
+    }
+
     /**
      * Check if user has a business profile.
      */

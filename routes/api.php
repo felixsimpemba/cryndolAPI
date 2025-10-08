@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BusinessProfileController;
+use App\Http\Controllers\DashboardController;
 
 // Public authentication routes with rate limiting
 Route::prefix('auth')->group(function () {
@@ -30,4 +31,9 @@ Route::middleware(['auth:sanctum', 'throttle:1000,60'])->prefix('auth')->group(f
     Route::post('/business-profile', [BusinessProfileController::class, 'create']);
     Route::put('/business-profile', [BusinessProfileController::class, 'update']);
     Route::delete('/business-profile', [BusinessProfileController::class, 'destroy']);
+});
+
+// Dashboard routes (protected)
+Route::middleware(['auth:sanctum', 'throttle:1000,60'])->group(function () {
+    Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
 });

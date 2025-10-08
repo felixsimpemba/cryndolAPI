@@ -31,6 +31,11 @@ use OpenApi\Attributes as OA;
  *     description="Business profile management endpoints"
  * )
  * 
+ * @OA\Tag(
+ *     name="Dashboard",
+ *     description="Dashboard metrics and summaries"
+ * )
+ * 
  * @OA\SecurityScheme(
  *     securityScheme="bearerAuth",
  *     type="http",
@@ -87,6 +92,33 @@ use OpenApi\Attributes as OA;
  *                 "items": {"type": "string"}
  *             },
  *             example={"email": {"Email is already registered"}, "password": {"Password must be at least 8 characters"}}
+ *         )
+ *     }
+ * )
+ * 
+ * @OA\Schema(
+ *     schema="ProfitPoint",
+ *     type="object",
+ *     properties={
+ *         @OA\Property(property="date", type="string", format="date", example="2025-09-01"),
+ *         @OA\Property(property="amount", type="number", format="float", example=320.50)
+ *     }
+ * )
+ * 
+ * @OA\Schema(
+ *     schema="DashboardSummaryResponse",
+ *     type="object",
+ *     properties={
+ *         @OA\Property(property="totalBorrowers", type="integer", example=128),
+ *         @OA\Property(property="totalLoans", type="integer", example=452),
+ *         @OA\Property(property="totalOutstandingAmount", type="number", format="float", example=54230.50),
+ *         @OA\Property(property="totalPaidAmount", type="number", format="float", example=123400.75),
+ *         @OA\Property(property="currentBalance", type="number", format="float", example=15320.00),
+ *         @OA\Property(property="loansDueInNext7Days", type="integer", example=17),
+ *         @OA\Property(
+ *             property="profitTrend",
+ *             type="array",
+ *             @OA\Items(ref="#/components/schemas/ProfitPoint")
  *         )
  *     }
  * )
