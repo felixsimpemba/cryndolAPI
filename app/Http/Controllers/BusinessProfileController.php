@@ -7,12 +7,45 @@ use App\Models\BusinessProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+use OpenApi\Attributes as OA;
+
 class BusinessProfileController extends Controller
 {
-    /**
-     * Create Business Profile
-     * POST /auth/business-profile
-     */
+    #[OA\Post(
+        path: '/auth/business-profile',
+        summary: 'Create business profile',
+        tags: ['Business Profile'],
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['businessName'],
+                properties: [
+                    new OA\Property(property: 'businessName', type: 'string', example: 'Acme Inc.')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: 'Business profile created',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Business profile created successfully'),
+                        new OA\Property(property: 'data', properties: [
+                            new OA\Property(property: 'businessProfile', ref: '#/components/schemas/BusinessProfile')
+                        ])
+                    ]
+                )
+            ),
+            new OA\Response(
+                response: 400,
+                description: 'Already exists or validation failed',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            )
+        ]
+    )]
     public function create(BusinessProfileRequest $request): JsonResponse
     {
         try {
@@ -52,10 +85,33 @@ class BusinessProfileController extends Controller
         }
     }
 
-    /**
-     * Update Business Profile
-     * PUT /auth/business-profile
-     */
+    #[OA\Put(
+        path: '/auth/business-profile',
+        summary: 'Update business profile',
+        tags: ['Business Profile'],
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['businessName'],
+                properties: [
+                    new OA\Property(property: 'businessName', type: 'string', example: 'New Name LLC')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Business profile updated', content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string', example: 'Business profile updated successfully'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'businessProfile', ref: '#/components/schemas/BusinessProfile')
+                    ])
+                ]
+            )),
+            new OA\Response(response: 404, description: 'Business profile not found', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'))
+        ]
+    )]
     public function update(BusinessProfileRequest $request): JsonResponse
     {
         try {
@@ -94,10 +150,21 @@ class BusinessProfileController extends Controller
         }
     }
 
-    /**
-     * Delete Business Profile
-     * DELETE /auth/business-profile
-     */
+    #[OA\Delete(
+        path: '/auth/business-profile',
+        summary: 'Delete business profile',
+        tags: ['Business Profile'],
+        security: [['bearerAuth' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Business profile deleted', content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string', example: 'Business profile deleted successfully')
+                ]
+            )),
+            new OA\Response(response: 404, description: 'Business profile not found', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'))
+        ]
+    )]
     public function destroy(Request $request): JsonResponse
     {
         try {

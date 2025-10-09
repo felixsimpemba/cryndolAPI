@@ -7,7 +7,7 @@
     },
     "servers": [
         {
-            "url": "https://api.cryndol.com/v1",
+            "url": "https://api.cryndol.com/api",
             "description": "Production server"
         },
         {
@@ -110,38 +110,323 @@
                 }
             }
         },
-        "/api/register": {
+        "/auth/login": {
             "post": {
                 "tags": [
-                    "Users"
+                    "Authentication"
                 ],
-                "summary": "Register a new user",
-                "description": "Create a new user account with name, email and password",
-                "operationId": "2f25885f3b6f61ca11724ec302d2e439",
+                "summary": "Login",
+                "description": "Authenticate user with email and password",
+                "operationId": "8cb7742ae98d0990acb2907c4e00bf24",
                 "requestBody": {
                     "required": true,
                     "content": {
                         "application/json": {
                             "schema": {
                                 "required": [
-                                    "name",
                                     "email",
                                     "password"
                                 ],
                                 "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "example": "John Doe"
-                                    },
                                     "email": {
                                         "type": "string",
                                         "format": "email",
-                                        "example": "john@example.com"
+                                        "example": "john.doe@example.com"
                                     },
                                     "password": {
                                         "type": "string",
                                         "format": "password",
-                                        "example": "password123"
+                                        "example": "SecurePassword123!"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Login successful",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Login successful"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "user": {
+                                                    "$ref": "#/components/schemas/User"
+                                                },
+                                                "tokens": {
+                                                    "$ref": "#/components/schemas/TokenPair"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/refresh": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Refresh access token",
+                "description": "Refresh access token using a valid refresh token",
+                "operationId": "f6c9683ed975ace7d035a09e6e2a9332",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "refreshToken"
+                                ],
+                                "properties": {
+                                    "refreshToken": {
+                                        "type": "string",
+                                        "example": "eyJhbGciOi..."
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tokens refreshed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TokenPair"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid refresh token",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/logout": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Logout",
+                "description": "Revoke all tokens for the authenticated user",
+                "operationId": "0d29c740dc06d77602af8095bf4654cc",
+                "responses": {
+                    "200": {
+                        "description": "Logout successful",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Logout successful"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/profile": {
+            "get": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Get user profile",
+                "description": "Returns the authenticated user profile (and business profile if available)",
+                "operationId": "19ebac4c2899c32cfe90402c3781e2e6",
+                "responses": {
+                    "200": {
+                        "description": "User profile",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "user": {
+                                            "$ref": "#/components/schemas/User"
+                                        },
+                                        "businessProfile": {
+                                            "oneOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/BusinessProfile"
+                                                }
+                                            ],
+                                            "nullable": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/business-profile": {
+            "put": {
+                "tags": [
+                    "Business Profile"
+                ],
+                "summary": "Update business profile",
+                "operationId": "29009d11fe08f2a828b022808f65b324",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "businessName"
+                                ],
+                                "properties": {
+                                    "businessName": {
+                                        "type": "string",
+                                        "example": "New Name LLC"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Business profile updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Business profile updated successfully"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "businessProfile": {
+                                                    "$ref": "#/components/schemas/BusinessProfile"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Business profile not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Business Profile"
+                ],
+                "summary": "Create business profile",
+                "operationId": "f29c3914ecb1b386074dc88bf068112d",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "businessName"
+                                ],
+                                "properties": {
+                                    "businessName": {
+                                        "type": "string",
+                                        "example": "Acme Inc."
                                     }
                                 },
                                 "type": "object"
@@ -151,48 +436,25 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "User created successfully",
+                        "description": "Business profile created",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "properties": {
-                                        "id": {
-                                            "type": "integer",
-                                            "example": 1
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
                                         },
-                                        "name": {
-                                            "type": "string",
-                                            "example": "John Doe"
-                                        },
-                                        "email": {
-                                            "type": "string",
-                                            "example": "john@example.com"
-                                        },
-                                        "created_at": {
-                                            "type": "string",
-                                            "format": "date-time"
-                                        },
-                                        "updated_at": {
-                                            "type": "string",
-                                            "format": "date-time"
-                                        }
-                                    },
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
                                         "message": {
                                             "type": "string",
-                                            "example": "The given data was invalid."
+                                            "example": "Business profile created successfully"
                                         },
-                                        "errors": {
+                                        "data": {
+                                            "properties": {
+                                                "businessProfile": {
+                                                    "$ref": "#/components/schemas/BusinessProfile"
+                                                }
+                                            },
                                             "type": "object"
                                         }
                                     },
@@ -200,8 +462,104 @@
                                 }
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Already exists or validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Business Profile"
+                ],
+                "summary": "Delete business profile",
+                "operationId": "f10c30327450ffb6ed149f82810e5798",
+                "responses": {
+                    "200": {
+                        "description": "Business profile deleted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Business profile deleted successfully"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Business profile not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/dashboard/summary": {
+            "get": {
+                "tags": [
+                    "Dashboard"
+                ],
+                "summary": "Get dashboard summary metrics",
+                "description": "Returns aggregated stats and profit trend for the authenticated business",
+                "operationId": "getDashboardSummary",
+                "responses": {
+                    "200": {
+                        "description": "Dashboard summary",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DashboardSummaryResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
             }
         }
     },
@@ -313,6 +671,59 @@
                 },
                 "type": "object"
             },
+            "ProfitPoint": {
+                "properties": {
+                    "date": {
+                        "type": "string",
+                        "format": "date",
+                        "example": "2025-09-01"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 320.5
+                    }
+                },
+                "type": "object"
+            },
+            "DashboardSummaryResponse": {
+                "properties": {
+                    "totalBorrowers": {
+                        "type": "integer",
+                        "example": 128
+                    },
+                    "totalLoans": {
+                        "type": "integer",
+                        "example": 452
+                    },
+                    "totalOutstandingAmount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 54230.5
+                    },
+                    "totalPaidAmount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 123400.75
+                    },
+                    "currentBalance": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 15320
+                    },
+                    "loansDueInNext7Days": {
+                        "type": "integer",
+                        "example": 17
+                    },
+                    "profitTrend": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ProfitPoint"
+                        }
+                    }
+                },
+                "type": "object"
+            },
             "ErrorResponse": {
                 "properties": {
                     "success": {
@@ -341,8 +752,12 @@
             "description": "User authentication endpoints"
         },
         {
-            "name": "Users",
-            "description": "Users"
+            "name": "Business Profile",
+            "description": "Business profile management endpoints"
+        },
+        {
+            "name": "Dashboard",
+            "description": "Dashboard metrics and summaries"
         }
     ]
 }

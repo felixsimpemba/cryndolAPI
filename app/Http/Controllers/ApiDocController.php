@@ -10,39 +10,39 @@ use OpenApi\Attributes as OA;
  *     description="API documentation for Cryndol application",
  *     version="1.0.0"
  * )
- * 
+ *
  * @OA\Server(
- *     url="https://api.cryndol.com/v1",
+ *     url="https://api.cryndol.com/api",
  *     description="Production server"
  * )
- * 
+ *
  * @OA\Server(
  *     url="http://localhost:8000/api",
  *     description="Local development server"
  * )
- * 
+ *
  * @OA\Tag(
  *     name="Authentication",
  *     description="User authentication endpoints"
  * )
- * 
+ *
  * @OA\Tag(
  *     name="Business Profile",
  *     description="Business profile management endpoints"
  * )
- * 
+ *
  * @OA\Tag(
  *     name="Dashboard",
  *     description="Dashboard metrics and summaries"
  * )
- * 
+ *
  * @OA\SecurityScheme(
  *     securityScheme="bearerAuth",
  *     type="http",
  *     scheme="bearer",
  *     bearerFormat="JWT"
  * )
- * 
+ *
  * @OA\Schema(
  *     schema="User",
  *     type="object",
@@ -56,7 +56,7 @@ use OpenApi\Attributes as OA;
  *         @OA\Property(property="updatedAt", type="string", format="date-time", example="2024-01-15T10:30:00Z")
  *     }
  * )
- * 
+ *
  * @OA\Schema(
  *     schema="BusinessProfile",
  *     type="object",
@@ -67,7 +67,7 @@ use OpenApi\Attributes as OA;
  *         @OA\Property(property="updatedAt", type="string", format="date-time", example="2024-01-15T10:35:00Z")
  *     }
  * )
- * 
+ *
  * @OA\Schema(
  *     schema="TokenPair",
  *     type="object",
@@ -77,7 +77,7 @@ use OpenApi\Attributes as OA;
  *         @OA\Property(property="expiresIn", type="integer", example=3600)
  *     }
  * )
- * 
+ *
  * @OA\Schema(
  *     schema="ValidationError",
  *     type="object",
@@ -95,7 +95,7 @@ use OpenApi\Attributes as OA;
  *         )
  *     }
  * )
- * 
+ *
  * @OA\Schema(
  *     schema="ProfitPoint",
  *     type="object",
@@ -104,7 +104,7 @@ use OpenApi\Attributes as OA;
  *         @OA\Property(property="amount", type="number", format="float", example=320.50)
  *     }
  * )
- * 
+ *
  * @OA\Schema(
  *     schema="DashboardSummaryResponse",
  *     type="object",
@@ -122,7 +122,7 @@ use OpenApi\Attributes as OA;
  *         )
  *     }
  * )
- * 
+ *
  * @OA\Schema(
  *     schema="ErrorResponse",
  *     type="object",
@@ -137,4 +137,3 @@ class ApiDocController extends Controller
     // This controller is used for Swagger documentation generation
     // All OpenAPI annotations are defined above for the entire API
 }
-  

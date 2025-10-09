@@ -104,10 +104,46 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Login
-     * POST /auth/login
-     */
+    #[OA\Post(
+        path: '/auth/login',
+        summary: 'Login',
+        description: 'Authenticate user with email and password',
+        tags: ['Authentication'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['email','password'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'john.doe@example.com'),
+                    new OA\Property(property: 'password', type: 'string', format: 'password', example: 'SecurePassword123!')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Login successful',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Login successful'),
+                        new OA\Property(
+                            property: 'data',
+                            properties: [
+                                new OA\Property(property: 'user', ref: '#/components/schemas/User'),
+                                new OA\Property(property: 'tokens', ref: '#/components/schemas/TokenPair')
+                            ]
+                        )
+                    ]
+                )
+            ),
+            new OA\Response(
+                response: 401,
+                description: 'Invalid credentials',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            )
+        ]
+    )]
     public function login(LoginRequest $request): JsonResponse
     {
         try {
@@ -147,10 +183,33 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Refresh Token
-     * POST /auth/refresh
-     */
+    #[OA\Post(
+        path: '/auth/refresh',
+        summary: 'Refresh access token',
+        description: 'Refresh access token using a valid refresh token',
+        tags: ['Authentication'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['refreshToken'],
+                properties: [
+                    new OA\Property(property: 'refreshToken', type: 'string', example: 'eyJhbGciOi...')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Tokens refreshed',
+                content: new OA\JsonContent(ref: '#/components/schemas/TokenPair')
+            ),
+            new OA\Response(
+                response: 401,
+                description: 'Invalid refresh token',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            )
+        ]
+    )]
     public function refresh(RefreshTokenRequest $request): JsonResponse
     {
         try {
@@ -168,10 +227,30 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Logout
-     * POST /auth/logout
-     */
+    #[OA\Post(
+        path: '/auth/logout',
+        summary: 'Logout',
+        description: 'Revoke all tokens for the authenticated user',
+        tags: ['Authentication'],
+        security: [['bearerAuth' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Logout successful',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Logout successful')
+                    ]
+                )
+            ),
+            new OA\Response(
+                response: 401,
+                description: 'Unauthorized',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            )
+        ]
+    )]
     public function logout(Request $request): JsonResponse
     {
         try {
@@ -190,10 +269,30 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Get User Profile
-     * GET /auth/profile
-     */
+    #[OA\Get(
+        path: '/auth/profile',
+        summary: 'Get user profile',
+        description: 'Returns the authenticated user profile (and business profile if available)',
+        tags: ['Authentication'],
+        security: [['bearerAuth' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'User profile',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'user', ref: '#/components/schemas/User'),
+                        new OA\Property(property: 'businessProfile', ref: '#/components/schemas/BusinessProfile', nullable: true)
+                    ]
+                )
+            ),
+            new OA\Response(
+                response: 401,
+                description: 'Unauthorized',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            )
+        ]
+    )]
     public function profile(Request $request): JsonResponse
     {
         try {
