@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Cryndol API provides authentication and business profile management services. This API follows RESTful principles and uses JWT tokens for authentication.
+The Cryndol API provides authentication, business profile management, customers, loans, loan payments, and dashboard summary services. This API follows RESTful principles and uses Sanctum bearer tokens for authentication.
 
 ## Base URL
 
@@ -264,6 +264,292 @@ Authorization: Bearer <access_token>
 }
 ```
 
+### 3. Dashboard Endpoints
+
+#### 3.1 Business Summary
+**GET** `/dashboard/summary/{businessId}`
+
+Returns aggregated metrics for the specified business.
+
+- Path params: `businessId` (string | number)
+- Auth: Bearer token required
+
+**Response (200 OK) Example:**
+```json
+{
+  "success": true,
+  "data": {
+    "totals": {
+      "loans": 120,
+      "customers": 85,
+      "activeLoans": 64,
+      "pendingLoans": 8
+    },
+    "recentPayments": [
+      { "loanId": 12, "amount": 250.00, "date": "2025-10-10" }
+    ]
+  }
+}
+```
+
+### 4. Customers Endpoints
+
+Base path: `/customers` (all require Bearer token)
+
+- Model fields used in this API: `fullName`, `email`, `phoneNumber`.
+
+#### 4.1 List Customers
+**GET** `/customers`
+
+Query params (optional):
+- `page`, `perPage`, search filters may be supported depending on implementation.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "customers": [
+      { "id": 1, "fullName": "Alice", "email": "alice@example.com", "phoneNumber": "+111" }
+    ],
+    "pagination": { "page": 1, "perPage": 15, "total": 1 }
+  }
+}
+```
+
+#### 4.2 Create Customer
+**POST** `/customers`
+
+**Request Body:**
+```json
+{
+  "fullName": "Alice Smith",
+  "email": "alice@example.com",
+  "phoneNumber": "+111"
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "success": true,
+  "message": "Customer created",
+  "data": { "customer": { "id": 2, "fullName": "Alice Smith", "email": "alice@example.com", "phoneNumber": "+111" } }
+}
+```
+
+#### 4.3 Get Customer By ID
+**GET** `/customers/{id}`
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": { "customer": { "id": 2, "fullName": "Alice Smith", "email": "alice@example.com", "phoneNumber": "+111" } }
+}
+```
+
+#### 4.4 Update Customer
+**PUT** `/customers/{id}`
+
+**Request Body:**
+```json
+{
+  "fullName": "Alice S.",
+  "email": "alice@example.com",
+  "phoneNumber": "+222"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Customer updated",
+  "data": { "customer": { "id": 2, "fullName": "Alice S.", "email": "alice@example.com", "phoneNumber": "+222" } }
+}
+```
+
+#### 4.5 Delete Customer
+**DELETE** `/customers/{id}`
+
+**Response (200 OK):**
+```json
+{ "success": true, "message": "Customer deleted" }
+```
+
+### 5. Loans Endpoints
+
+Base path: `/loans` (all require Bearer token)
+
+- Model fields (per current code): `user_id`, `borrower_id`, `principal`, `interestRate`, `termMonths`, `startDate`, `status`, `totalPaid`.
+
+#### 5.1 List Loans
+**GET** `/loans`
+
+Optional query params may include filters (status, borrowerId, pagination).
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "loans": [
+      {
+        "id": 10,
+        "user_id": 1,
+        "borrower_id": 2,
+        "principal": "10000.00",
+        "interestRate": "12.00",
+        "termMonths": 12,
+        "startDate": "2025-01-01",
+        "status": "ACTIVE",
+        "totalPaid": "1200.00"
+      }
+    ],
+    "pagination": { "page": 1, "perPage": 15, "total": 1 }
+  }
+}
+```
+
+#### 5.2 Create Loan
+**POST** `/loans`
+
+**Request Body:**
+```json
+{
+  "borrower_id": 2,
+  "principal": 10000,
+  "interestRate": 12,
+  "termMonths": 12,
+  "startDate": "2025-01-01"
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "success": true,
+  "message": "Loan created",
+  "data": {
+    "loan": {
+      "id": 11,
+      "user_id": 1,
+      "borrower_id": 2,
+      "principal": "10000.00",
+      "interestRate": "12.00",
+      "termMonths": 12,
+      "startDate": "2025-01-01",
+      "status": "PENDING",
+      "totalPaid": "0.00"
+    }
+  }
+}
+```
+
+#### 5.3 Get Loan By ID
+**GET** `/loans/{id}`
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": { "loan": { "id": 11, "borrower_id": 2, "principal": "10000.00", "interestRate": "12.00", "termMonths": 12, "startDate": "2025-01-01", "status": "PENDING", "totalPaid": "0.00" } }
+}
+```
+
+#### 5.4 Update Loan
+**PUT** `/loans/{id}`
+
+**Request Body:**
+```json
+{
+  "principal": 12000,
+  "interestRate": 11.5,
+  "termMonths": 10,
+  "startDate": "2025-02-01",
+  "status": "APPROVED"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Loan updated",
+  "data": { "loan": { "id": 11 } }
+}
+```
+
+#### 5.5 Delete Loan
+**DELETE** `/loans/{id}`
+
+**Response (200 OK):**
+```json
+{ "success": true, "message": "Loan deleted" }
+```
+
+#### 5.6 Change Loan Status
+**POST** `/loans/{id}/status`
+
+**Request Body:**
+```json
+{
+  "status": "APPROVED"
+}
+```
+
+Accepted values typically include: `PENDING`, `APPROVED`, `ACTIVE`, `PAID`, `DEFAULTED`, `CANCELLED`.
+
+**Response (200 OK):**
+```json
+{ "success": true, "message": "Status updated", "data": { "loanId": 11, "status": "APPROVED" } }
+```
+
+### 6. Loan Payments Endpoints
+
+#### 6.1 Add Payment To Loan
+**POST** `/loans/{id}/payments`
+
+Adds a payment record to the specified loan.
+
+**Request Body:**
+```json
+{
+  "payment_date": "2025-10-10",
+  "amount_paid": 250.00,
+  "principal_paid": 200.00,
+  "interest_paid": 50.00,
+  "payment_method": "BANK_TRANSFER",
+  "reference_number": "REF-12345",
+  "notes": "October installment"
+}
+```
+
+Note: The backend calculates `balance_remaining` and updates `totalPaid` accordingly if implemented in controller.
+
+**Response (201 Created):**
+```json
+{
+  "success": true,
+  "message": "Payment recorded",
+  "data": {
+    "payment": {
+      "id": "uuid",
+      "loan_id": 11,
+      "payment_date": "2025-10-10",
+      "amount_paid": "250.00",
+      "principal_paid": "200.00",
+      "interest_paid": "50.00",
+      "balance_remaining": "9800.00",
+      "payment_method": "BANK_TRANSFER",
+      "reference_number": "REF-12345",
+      "notes": "October installment"
+    }
+  }
+}
+```
+
 ## Error Responses
 
 ### Common Error Formats
@@ -345,28 +631,46 @@ interface BusinessProfile {
 }
 ```
 
-### Token Model
+### Customer Model (Borrower)
 ```typescript
-interface TokenPair {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: number; // seconds
+interface Customer {
+  id: number;
+  fullName: string;
+  email: string;
+  phoneNumber: string;
 }
 ```
 
-## Security Considerations
+### Loan Model
+```typescript
+interface Loan {
+  id: number;
+  user_id: number;
+  borrower_id: number;
+  principal: string; // decimal
+  interestRate: string; // decimal percentage
+  termMonths: number;
+  startDate: string; // date (YYYY-MM-DD)
+  status: 'PENDING' | 'APPROVED' | 'ACTIVE' | 'PAID' | 'DEFAULTED' | 'CANCELLED';
+  totalPaid: string; // decimal
+}
+```
 
-### Password Requirements
-- Minimum 8 characters
-- At least one uppercase letter
-- At least one lowercase letter
-- At least one number
-- At least one special character
-
-### Token Security
-- Access tokens expire in 1 hour
-- Refresh tokens expire in 30 days
-- Tokens are stored securely and cannot be reused after logout
+### LoanPayment Model
+```typescript
+interface LoanPayment {
+  id: string; // uuid
+  loan_id: number;
+  payment_date: string; // date
+  amount_paid: string; // decimal
+  principal_paid: string; // decimal
+  interest_paid: string; // decimal
+  balance_remaining: string; // decimal
+  payment_method: 'BANK_TRANSFER' | 'CASH' | 'CHEQUE' | 'MOBILE_MONEY';
+  reference_number?: string;
+  notes?: string;
+}
+```
 
 ## Testing
 

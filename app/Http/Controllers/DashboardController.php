@@ -15,16 +15,22 @@ class DashboardController extends Controller
 {
 	/**
 	 * @OA\Get(
-	 *     path="/dashboard/summary",
+	 *     path="/dashboard/summary/{businessId}",
 	 *     operationId="getDashboardSummary",
 	 *     summary="Get dashboard summary metrics",
 	 *     description="Returns aggregated stats and profit trend for the authenticated business",
 	 *     tags={"Dashboard"},
 	 *     security={{"bearerAuth": {}}},
+	 *     @OA\Parameter(
+	 *         name="businessId",
+	 *         in="path",
+	 *         required=true,
+	 *         description="Business identifier",
+	 *         @OA\Schema(type="string")
+	 *     ),
 	 *     @OA\Response(
 	 *         response=200,
-	 *         description="Dashboard summary",
-	 *         @OA\JsonContent(ref="#/components/schemas/DashboardSummaryResponse")
+	 *         description="Dashboard summary"
 	 *     ),
 	 *     @OA\Response(
 	 *         response=401,
@@ -33,7 +39,7 @@ class DashboardController extends Controller
 	 *     )
 	 * )
 	 */
-	public function summary(Request $request)
+	public function summary(Request $request, $businessId)
 	{
 		$user = $request->user();
 
