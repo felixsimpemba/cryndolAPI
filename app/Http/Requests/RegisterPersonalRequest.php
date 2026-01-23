@@ -29,7 +29,8 @@ class RegisterPersonalRequest extends FormRequest
                 'required',
                 'string',
             ],
-            'acceptTerms' => 'required|boolean|accepted'
+            'acceptTerms' => 'required|boolean|accepted',
+            'working_capital' => 'nullable|numeric|min:0',
         ];
     }
 

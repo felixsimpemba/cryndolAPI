@@ -27,6 +27,13 @@ class User extends Authenticatable
         'role',
         'status',
         'is_super_user',
+        'email_notifications',
+        'payment_reminders',
+        'marketing_updates',
+        'otp_code',
+        'otp_expires_at',
+        'acceptTerms',
+        'working_capital',
     ];
 
     /**
@@ -37,6 +44,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'otp_code',
     ];
 
     /**
@@ -48,6 +56,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'otp_expires_at' => 'datetime',
             'password' => 'hashed',
             'hasBusinessProfile' => 'boolean',
         ];

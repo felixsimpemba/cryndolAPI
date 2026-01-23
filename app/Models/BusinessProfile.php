@@ -12,6 +12,13 @@ class BusinessProfile extends Model
     protected $fillable = [
         'user_id',
         'businessName',
+        'logo_url',
+        'tagline',
+        'primary_color',
+        'secondary_color',
+        'currency_code',
+        'locale',
+        'timezone',
     ];
 
     protected function casts(): array

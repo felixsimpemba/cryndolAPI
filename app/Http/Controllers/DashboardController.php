@@ -73,6 +73,7 @@ class DashboardController extends Controller
 		$fromDate = Carbon::today()->subDays(29);
 		$profitRows = Transaction::where('user_id', $user->id)
 			->whereBetween('occurred_at', [$fromDate->startOfDay(), Carbon::today()->endOfDay()])
+			->where('category', '!=', 'capital_injection')
 			->get(['occurred_at', 'type', 'amount', 'category']);
 
 		$daily = [];
@@ -82,7 +83,7 @@ class DashboardController extends Controller
 
 		foreach ($profitRows as $row) {
 			$date = Carbon::parse($row->occurred_at)->format('Y-m-d');
-			$delta = ($row->type === 'inflow') ? (float)$row->amount : -(float)$row->amount;
+			$delta = ($row->type === 'inflow') ? (float) $row->amount : -(float) $row->amount;
 			$daily[$date] = ($daily[$date] ?? 0) + $delta;
 		}
 
@@ -97,11 +98,12 @@ class DashboardController extends Controller
 		return response()->json([
 			'totalBorrowers' => $totalBorrowers,
 			'totalLoans' => $totalLoans,
-			'totalOutstandingAmount' => round((float)$totalOutstandingAmount, 2),
-			'totalPaidAmount' => round((float)$totalPaidAmount, 2),
-			'currentBalance' => round((float)$currentBalance, 2),
+			'totalOutstandingAmount' => round((float) $totalOutstandingAmount, 2),
+			'totalPaidAmount' => round((float) $totalPaidAmount, 2),
+			'currentBalance' => round((float) $currentBalance, 2),
 			'loansDueInNext7Days' => $loansDueInNext7Days,
 			'profitTrend' => $profitTrend,
+			'workingCapital' => round((float) $user->working_capital, 2),
 		]);
 	}
 }

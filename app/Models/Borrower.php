@@ -14,6 +14,23 @@ class Borrower extends Model
 		'fullName',
 		'email',
 		'phoneNumber',
+		'nrc_number',
+		'tpin_number',
+		'passport_number',
+		'address',
+		'date_of_birth',
+		'gender',
+		'marital_status',
+		'employment_status',
+		'employer_name',
+		'monthly_income',
+		'credit_score',
+		'risk_segment',
+	];
+
+	protected $casts = [
+		'date_of_birth' => 'date',
+		'monthly_income' => 'decimal:2',
 	];
 
 	public function user()
@@ -25,6 +42,9 @@ class Borrower extends Model
 	{
 		return $this->hasMany(Loan::class);
 	}
+
+	public function documents()
+	{
+		return $this->hasMany(Document::class);
+	}
 }
-
-

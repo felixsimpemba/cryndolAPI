@@ -15,6 +15,13 @@ class LoanPayment extends Model
 		'paidDate',
 		'amountScheduled',
 		'amountPaid',
+		'principal_portion',
+		'interest_portion',
+		'fee_portion',
+		'penalty_portion',
+		'payment_method',
+		'transaction_reference',
+		'notes',
 		'status',
 	];
 

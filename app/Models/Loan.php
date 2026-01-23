@@ -10,6 +10,7 @@ class Loan extends Model
 	use HasFactory;
 
 	protected $fillable = [
+		'loan_product_id',
 		'user_id',
 		'borrower_id',
 		'principal',
@@ -43,6 +44,11 @@ class Loan extends Model
 	public function payments()
 	{
 		return $this->hasMany(LoanPayment::class);
+	}
+
+	public function loanProduct()
+	{
+		return $this->belongsTo(LoanProduct::class);
 	}
 }
 
