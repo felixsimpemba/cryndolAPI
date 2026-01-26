@@ -15,7 +15,7 @@ class TokenService
     {
         // Create access token (expires in 1 hour)
         $accessToken = $user->createToken('access_token', ['*'], now()->addHour());
-        
+
         // Create refresh token (expires in 30 days)
         $refreshToken = $user->createToken('refresh_token', ['refresh'], now()->addDays(30));
 
@@ -33,7 +33,7 @@ class TokenService
     {
         // Find the refresh token
         $token = PersonalAccessToken::findToken($refreshToken);
-        
+
         if (!$token || !$token->can('refresh')) {
             throw new \Exception('Invalid refresh token');
         }
@@ -68,7 +68,7 @@ class TokenService
     public function revokeToken(string $token): bool
     {
         $personalAccessToken = PersonalAccessToken::findToken($token);
-        
+
         if ($personalAccessToken) {
             $personalAccessToken->delete();
             return true;
@@ -80,14 +80,13 @@ class TokenService
     /**
      * Authenticate user with credentials
      */
+
     public function authenticateUser(string $email, string $password): ?User
     {
         $user = User::where('email', $email)->first();
-
         if ($user && Hash::check($password, $user->password)) {
             return $user;
         }
-
         return null;
     }
 }
