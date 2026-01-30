@@ -42,10 +42,11 @@ class UserSeeder extends Seeder
         ]);
 
         // Create additional random users with business profiles
-        User::factory()
-            ->count(5)
-            ->has(BusinessProfile::factory())
-            ->create();
+        // Create additional random users with business profiles
+        // User::factory()
+        //     ->count(5)
+        //     ->has(BusinessProfile::factory())
+        //     ->create();
 
         $this->command->info('Users and business profiles seeded successfully!');
     }

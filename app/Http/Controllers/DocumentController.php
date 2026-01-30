@@ -4,12 +4,27 @@ namespace App\Http\Controllers;
 
 use App\Models\Document;
 use App\Models\Borrower;
+use App\Models\Loan;
+use App\Models\Transaction;
+use App\Models\LoanPayment;
+use App\Services\ExcelExportService;
+use App\Services\LoanAgreementPdfService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Response;
 
 class DocumentController extends Controller
 {
+    protected $excelService;
+    protected $pdfService;
+
+    public function __construct(ExcelExportService $excelService, LoanAgreementPdfService $pdfService)
+    {
+        $this->excelService = $excelService;
+        $this->pdfService = $pdfService;
+    }
+
     public function index(Request $request, $borrowerId)
     {
         $documents = Document::where('borrower_id', $borrowerId)->get();
@@ -71,5 +86,161 @@ class DocumentController extends Controller
         $document->delete();
 
         return response()->json(['status' => 'success', 'message' => 'Document deleted successfully']);
+    }
+
+    /**
+     * Export loans to Excel
+     */
+    public function exportLoans(Request $request)
+    {
+        try {
+            $query = Loan::with(['borrower', 'user'])->where('user_id', $request->user()->id);
+
+            // Apply filters if provided
+            if ($request->has('status') && $request->status !== 'all') {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->has('start_date')) {
+                $query->whereDate('startDate', '>=', $request->start_date);
+            }
+
+            if ($request->has('end_date')) {
+                $query->whereDate('startDate', '<=', $request->end_date);
+            }
+
+            $loans = $query->get();
+
+            $filepath = $this->excelService->exportLoans($loans);
+
+            return Response::download($filepath, basename($filepath), [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ])->deleteFileAfterSend(true);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export loans: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Export borrowers to Excel
+     */
+    public function exportBorrowers(Request $request)
+    {
+        try {
+            $borrowers = Borrower::where('user_id', $request->user()->id)->get();
+
+            $filepath = $this->excelService->exportBorrowers($borrowers);
+
+            return Response::download($filepath, basename($filepath), [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ])->deleteFileAfterSend(true);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export borrowers: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Export transactions to Excel
+     */
+    public function exportTransactions(Request $request)
+    {
+        try {
+            $query = Transaction::where('user_id', $request->user()->id);
+
+            // Apply filters if provided
+            if ($request->has('type') && $request->type !== 'all') {
+                $query->where('type', $request->type);
+            }
+
+            if ($request->has('start_date')) {
+                $query->whereDate('occurred_at', '>=', $request->start_date);
+            }
+
+            if ($request->has('end_date')) {
+                $query->whereDate('occurred_at', '<=', $request->end_date);
+            }
+
+            $transactions = $query->get();
+
+            $filepath = $this->excelService->exportTransactions($transactions);
+
+            return Response::download($filepath, basename($filepath), [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ])->deleteFileAfterSend(true);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export transactions: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Export loan payments to Excel
+     */
+    public function exportPayments(Request $request)
+    {
+        try {
+            $query = LoanPayment::with(['loan.borrower'])
+                ->whereHas('loan', function ($q) use ($request) {
+                    $q->where('user_id', $request->user()->id);
+                });
+
+            // Apply filters if provided
+            if ($request->has('start_date')) {
+                $query->whereDate('paymentDate', '>=', $request->start_date);
+            }
+
+            if ($request->has('end_date')) {
+                $query->whereDate('paymentDate', '<=', $request->end_date);
+            }
+
+            $payments = $query->get();
+
+            $filepath = $this->excelService->exportPayments($payments);
+
+            return Response::download($filepath, basename($filepath), [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ])->deleteFileAfterSend(true);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export payments: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate loan agreement PDF
+     */
+    public function generateLoanAgreement(Request $request, $loanId)
+    {
+        try {
+            $loan = Loan::where('user_id', $request->user()->id)
+                ->where('id', $loanId)
+                ->firstOrFail();
+
+            $filepath = $this->pdfService->generateLoanAgreement($loan);
+
+            return Response::download($filepath, basename($filepath), [
+                'Content-Type' => 'application/pdf',
+            ])->deleteFileAfterSend(true);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate loan agreement: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

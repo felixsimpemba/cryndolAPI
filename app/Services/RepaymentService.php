@@ -12,45 +12,34 @@ class RepaymentService
     public function recordPayment(Loan $loan, array $data)
     {
         return DB::transaction(function () use ($loan, $data) {
-            $amount = (float) $data['amountPaid']; // Use amountPaid to match existing data structure
+            $amount = (float) $data['amountPaid'];
 
-            // Logic to allocate payment (Waterfall: Penalty -> Fee -> Interest -> Principal)
-            // For now, simpler logic or assume frontend/calc sends split? 
-            // Better: Calculate split here.
+            // Calculate Totals for Proportional Split
+            $totalPrincipal = (float) $loan->principal;
+            $totalInterest = (float) $loan->principal * (float) $loan->interestRate / 100.0;
+            $totalDue = $totalPrincipal + $totalInterest;
 
-            // Simplified waterfall allocation
-            $remaining = $amount;
+            // Avoid division by zero
+            if ($totalDue <= 0) {
+                $principalPaid = $amount;
+                $interestPaid = 0;
+            } else {
+                // Proportional Split
+                $interestRatio = $totalInterest / $totalDue;
+                $interestPaid = round($amount * $interestRatio, 2);
+                $principalPaid = $amount - $interestPaid;
+            }
 
-            // 1. Penalties (Mock: assume 0 outstanding for now, or check loan state)
+            // 1. Penalties (Mock: assume 0 outstanding for now)
             $penaltyPaid = 0;
-
             // 2. Fees (Mock)
             $feePaid = 0;
 
-            // 3. Interest
-            // Outstanding Interest = (Principal * Rate / 100) - Already Paid Interest?
-            // Simple approach: Flat interest total.
-            // Total Interest Due = Principal * Rate / 100 * (Term/Period?) -> Assuming flat rate for term in basic model
-            $expectedInterest = ($loan->principal * $loan->interestRate / 100);
-            // $alreadyPaidInterest = $loan->payments()->sum('interest_portion'); 
-            // $dueInterest = max(0, $expectedInterest - $alreadyPaidInterest);
-
-            // For MVP, allocate proportionally or just dump to principal if not strict?
-            // Let's alloc to Principal primarily for reducing balance logic if we had it.
-            // But since we use Flat often:
-            $interestPaid = 0;
-            $principalPaid = 0;
-
-            // Basic hack for MVP allocation without full schedule:
-            // If loan is flat, interest is fixed.
-
-            $principalPaid = $remaining; // Dump all to principal/general balance for now to pass tests/UI
-
             $payment = LoanPayment::create([
                 'loan_id' => $loan->id,
-                'scheduledDate' => $data['paidDate'] ?? now(), // Use payment date as scheduled date for actual payments
+                'scheduledDate' => $data['paidDate'] ?? now(),
                 'paidDate' => $data['paidDate'] ?? now(),
-                'amountScheduled' => $amount, // Same as amount paid for actual payments
+                'amountScheduled' => $amount,
                 'amountPaid' => $amount,
                 'principal_portion' => $principalPaid,
                 'interest_portion' => $interestPaid,
@@ -59,7 +48,17 @@ class RepaymentService
                 'payment_method' => $data['payment_method'] ?? 'cash',
                 'transaction_reference' => $data['transaction_reference'] ?? null,
                 'notes' => $data['notes'] ?? null,
-                'status' => 'paid', // lowercase to match migration
+                'status' => 'paid',
+            ]);
+
+            // Create Transaction for Repayment (Cash In)
+            \App\Models\Transaction::create([
+                'user_id' => $loan->user_id,
+                'type' => 'inflow',
+                'category' => 'repayment',
+                'amount' => $amount,
+                'description' => "Repayment for Loan #{$loan->id} (" . ($loan->borrower->fullName ?? 'Borrower') . ")",
+                'occurred_at' => now(),
             ]);
 
             // Update Loan Totals

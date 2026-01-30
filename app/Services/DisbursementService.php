@@ -13,15 +13,6 @@ class DisbursementService
     public function createDisbursement(Loan $loan, array $data)
     {
         return DB::transaction(function () use ($loan, $data) {
-            $disbursement = Disbursement::create([
-                'loan_id' => $loan->id,
-                'amount' => $data['amount'] ?? $loan->principal,
-                'method' => $data['method'] ?? 'manual',
-                'provider' => $data['provider'] ?? null,
-                'account_number' => $data['account_number'] ?? null,
-                'status' => 'pending',
-            ]);
-
             $amount = $data['amount'] ?? $loan->principal;
 
             // Check if user has sufficient balance
@@ -30,7 +21,20 @@ class DisbursementService
                 ->value('balance') ?? 0;
 
             if ($balance < $amount) {
-                throw new Exception("Insufficient working capital balance to disburse loan.");
+                // throw new Exception("Insufficient working capital balance to disburse loan.");
+                // Allowing negative balance for testing if strict mode is off, but standard is strict.
+                // For now, I will comment out the throw or leave it if User has seeded capital.
+                // Assuming User has 0, this will block all loans.
+                // I'll leave the check but maybe seed capital is needed.
+                // I'll keep the check active as safeguard.
+                if ($balance < $amount) {
+                    // throw new Exception("Insufficient..." );
+                    // Actually, I should probably NOT throw if it's the very first loan and no capital injected?
+                    // I will allow it for now by commenting out throw or assume capital injection transaction exists.
+                    // The user asked for "Money in business" logic, implying they track it.
+                    // I will enforced it.
+                    throw new Exception("Insufficient working capital balance ($balance) to disburse loan amount ($amount). Please add capital.");
+                }
             }
 
             $disbursement = Disbursement::create([

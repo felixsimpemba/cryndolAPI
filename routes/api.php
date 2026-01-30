@@ -36,6 +36,14 @@ Route::prefix('auth')->group(function () {
     // Reset Password
     Route::post('/reset-password', [AuthController::class, 'resetPassword'])
         ->middleware('throttle:10,60'); // Stricter throttle
+
+    // Account Deletion Request
+    Route::post('/request-deletion-otp', [AuthController::class, 'requestDeletionOtp'])
+        ->middleware('throttle:10,60');
+
+    // Confirm Account Deletion
+    Route::post('/confirm-deletion', [AuthController::class, 'confirmDeletion'])
+        ->middleware('throttle:10,60');
 });
 
 // Protected routes (require authentication with rate limiting)
@@ -74,11 +82,22 @@ Route::middleware(['auth:sanctum', 'throttle:1000,60'])->group(function () {
 
     // Loan payments
     Route::post('/loans/{id}/payments', [LoansController::class, 'addPayment']);
+    Route::post('/loans/{id}/send-reminder', [LoansController::class, 'sendReminderEmail']);
 
     // Documents
     Route::get('/customers/{id}/documents', [\App\Http\Controllers\DocumentController::class, 'index']);
     Route::post('/customers/{id}/documents', [\App\Http\Controllers\DocumentController::class, 'store']);
     Route::delete('/documents/{id}', [\App\Http\Controllers\DocumentController::class, 'destroy']);
+
+    // Document Exports & PDF Generation
+    Route::prefix('documents')->group(function () {
+        Route::get('/export/loans', [\App\Http\Controllers\DocumentController::class, 'exportLoans']);
+        Route::get('/export/borrowers', [\App\Http\Controllers\DocumentController::class, 'exportBorrowers']);
+        Route::get('/export/transactions', [\App\Http\Controllers\DocumentController::class, 'exportTransactions']);
+        Route::get('/export/payments', [\App\Http\Controllers\DocumentController::class, 'exportPayments']);
+        Route::get('/pdf/loan-agreement/{loanId}', [\App\Http\Controllers\DocumentController::class, 'generateLoanAgreement']);
+    });
+
 
     // Disbursements
     Route::get('/disbursements', [\App\Http\Controllers\DisbursementController::class, 'index']);

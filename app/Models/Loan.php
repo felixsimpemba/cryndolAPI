@@ -16,10 +16,13 @@ class Loan extends Model
 		'principal',
 		'interestRate',
 		'termMonths',
+		'term_unit', // Added
 		'startDate',
 		'status',
 		'totalPaid',
 	];
+
+	protected $appends = ['dueDate'];
 
 	protected function casts(): array
 	{
@@ -29,6 +32,28 @@ class Loan extends Model
 			'startDate' => 'date',
 			'totalPaid' => 'decimal:2',
 		];
+	}
+
+	public function getDueDateAttribute()
+	{
+		if (!$this->startDate)
+			return null;
+
+		$date = $this->startDate->copy();
+		$term = (int) $this->termMonths; // This column represents the duration value
+		$unit = $this->term_unit ?? 'months'; // Default to months
+
+		switch ($unit) {
+			case 'days':
+				return $date->addDays($term);
+			case 'weeks':
+				return $date->addWeeks($term);
+			case 'years':
+				return $date->addYears($term);
+			case 'months':
+			default:
+				return $date->addMonths($term);
+		}
 	}
 
 	public function user()

@@ -77,11 +77,7 @@ class BusinessProfileController extends Controller
                 ],
             ], 201);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to create business profile',
-                'errors' => $e->getMessage(),
-            ], 500);
+            return $this->logAndResponseError($e, 'Failed to create business profile');
         }
     }
 
@@ -142,11 +138,7 @@ class BusinessProfileController extends Controller
                 ],
             ], 200);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to update business profile',
-                'errors' => $e->getMessage(),
-            ], 500);
+            return $this->logAndResponseError($e, 'Failed to update business profile');
         }
     }
 
@@ -185,11 +177,7 @@ class BusinessProfileController extends Controller
                 'message' => 'Business profile deleted successfully',
             ], 200);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete business profile',
-                'errors' => $e->getMessage(),
-            ], 500);
+            return $this->logAndResponseError($e, 'Failed to delete business profile');
         }
     }
 }

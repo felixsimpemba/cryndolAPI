@@ -111,11 +111,7 @@ class AuthController extends Controller
                 ],
             ], 201);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Registration failed',
-                'errors' => $e->getMessage(),
-            ], 500);
+            return $this->logAndResponseError($e, 'Registration failed');
         }
     }
 
@@ -174,6 +170,7 @@ class AuthController extends Controller
 
         // Verify user
         $user->email_verified_at = Carbon::now();
+        $user->last_login = Carbon::now();
         $user->otp_code = null;
         $user->otp_expires_at = null;
         $user->save();
@@ -181,9 +178,14 @@ class AuthController extends Controller
         // Login user
         $tokens = $this->tokenService->createTokens($user);
 
+        // Generate personalized greeting for first login
+        $greeting = $this->getTimeBasedGreeting();
+        $welcomeMessage = $greeting . ', ' . $user->fullName . '! Welcome to Cryndol.';
+
         return response()->json([
             'success' => true,
             'message' => 'Email verified successfully',
+            'greeting' => $welcomeMessage,
             'data' => [
                 'user' => [
                     'id' => 'user_' . $user->id,
@@ -300,11 +302,20 @@ class AuthController extends Controller
                 ], 401);
             }
 
+            // Update last login timestamp
+            $user->last_login = Carbon::now();
+            $user->save();
+
             $tokens = $this->tokenService->createTokens($user);
+
+            // Generate personalized greeting
+            $greeting = $this->getTimeBasedGreeting();
+            $welcomeMessage = $greeting . ', ' . $user->fullName . '! Welcome back.';
 
             return response()->json([
                 'success' => true,
                 'message' => 'Login successful',
+                'greeting' => $welcomeMessage,
                 'data' => [
                     'user' => [
                         'id' => 'user_' . $user->id,
@@ -319,11 +330,7 @@ class AuthController extends Controller
                 ],
             ], 200);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Login failed',
-                'errors' => $e->getMessage(),
-            ], 500);
+            return $this->logAndResponseError($e, 'Login failed');
         }
     }
 
@@ -364,10 +371,7 @@ class AuthController extends Controller
                 'data' => $tokens,
             ], 200);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 401);
+            return $this->logAndResponseError($e, $e->getMessage(), 401);
         }
     }
 
@@ -405,11 +409,7 @@ class AuthController extends Controller
                 'message' => 'Logout successful',
             ], 200);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Logout failed',
-                'errors' => $e->getMessage(),
-            ], 500);
+            return $this->logAndResponseError($e, 'Logout failed');
         }
     }
 
@@ -470,11 +470,7 @@ class AuthController extends Controller
                 'data' => $responseData,
             ], 200);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to retrieve profile',
-                'errors' => $e->getMessage(),
-            ], 500);
+            return $this->logAndResponseError($e, 'Failed to retrieve profile');
         }
     }
     #[OA\Post(
@@ -593,5 +589,140 @@ class AuthController extends Controller
             'success' => true,
             'message' => 'Password reset successfully. You can now login with your new password.',
         ], 200);
+    }
+
+    #[OA\Post(
+        path: '/auth/request-deletion-otp',
+        summary: 'Request Account Deletion OTP',
+        description: 'Send an OTP to the user email for account deletion verification',
+        tags: ['Authentication'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['email'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'john.doe@example.com')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'OTP sent',
+                content: new OA\JsonContent(
+                    properties: [new OA\Property(property: 'success', type: 'boolean', example: true)]
+                )
+            ),
+            new OA\Response(
+                response: 404,
+                description: 'User not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            )
+        ]
+    )]
+    public function requestDeletionOtp(Request $request): JsonResponse
+    {
+        $request->validate(['email' => 'required|email']);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'User not found'], 404);
+        }
+
+        $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+        $user->otp_code = $otp;
+        $user->otp_expires_at = Carbon::now()->addMinutes(10);
+        $user->save();
+
+        Mail::to($user->email)->send(new OtpVerificationMail($otp));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Verification code sent to your email',
+        ], 200);
+    }
+
+    #[OA\Post(
+        path: '/auth/confirm-deletion',
+        summary: 'Confirm Account Deletion',
+        description: 'Permanently delete account using the OTP',
+        tags: ['Authentication'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['email', 'code'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'john.doe@example.com'),
+                    new OA\Property(property: 'code', type: 'string', example: '123456')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Account deleted successfully',
+                content: new OA\JsonContent(
+                    properties: [new OA\Property(property: 'success', type: 'boolean', example: true)]
+                )
+            ),
+            new OA\Response(
+                response: 400,
+                description: 'Invalid code or expired',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            )
+        ]
+    )]
+    public function confirmDeletion(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'code' => 'required|string|size:6',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'User not found'], 404);
+        }
+
+        if (!$user->otp_code || $user->otp_code !== $request->code) {
+            return response()->json(['success' => false, 'message' => 'Invalid verification code'], 400);
+        }
+
+        if (Carbon::now()->gt($user->otp_expires_at)) {
+            return response()->json(['success' => false, 'message' => 'Verification code expired'], 400);
+        }
+
+        // Revoke all tokens
+        if ($this->tokenService) {
+            $this->tokenService->revokeAllTokens($user);
+        }
+
+        // Delete user
+        $user->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Account deleted successfully.',
+        ], 200);
+    }
+
+    /**
+     * Get time-based greeting
+     */
+    private function getTimeBasedGreeting(): string
+    {
+        $hour = Carbon::now()->hour;
+
+        if ($hour >= 5 && $hour < 12) {
+            return 'Good morning';
+        } elseif ($hour >= 12 && $hour < 17) {
+            return 'Good afternoon';
+        } elseif ($hour >= 17 && $hour < 21) {
+            return 'Good evening';
+        } else {
+            return 'Good night';
+        }
     }
 }

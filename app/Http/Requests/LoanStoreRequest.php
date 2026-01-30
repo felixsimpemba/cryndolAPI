@@ -27,6 +27,7 @@ class LoanStoreRequest extends FormRequest
             'principal' => ['required', 'numeric', 'min:0.01'],
             'interestRate' => ['required', 'numeric', 'min:0', 'max:100'],
             'termMonths' => ['required', 'integer', 'min:1'],
+            'term_unit' => ['nullable', 'string', 'in:days,weeks,months,years'],
             'startDate' => ['required', 'date'],
             'status' => ['sometimes', 'string', 'in:pending,approved,active,paid,defaulted,cancelled,submitted'],
         ];

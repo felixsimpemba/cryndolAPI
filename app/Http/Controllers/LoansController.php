@@ -8,10 +8,15 @@ use App\Models\LoanPayment;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use App\Http\Requests\LoanStoreRequest;
 use App\Http\Requests\LoanUpdateRequest;
 use App\Http\Requests\LoanStatusRequest;
 use App\Http\Requests\LoanPaymentRequest;
+use App\Mail\LoanApprovedMail;
+use App\Mail\PaymentReminderMail;
+use App\Mail\PaymentReceivedMail;
+use App\Mail\LoanClosedMail;
 use OpenApi\Attributes as OA;
 
 class LoansController extends Controller
@@ -20,7 +25,11 @@ class LoansController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $q = Loan::query()->where('user_id', $user->id)->with(['borrower']);
+        $q = Loan::query()
+            ->where('user_id', $user->id)
+            ->with(['borrower'])
+            ->withSum('payments as totalPaid', 'amountPaid');
+
         if ($status = $request->query('status')) {
             $q->where('status', $status);
         }
@@ -95,21 +104,35 @@ class LoansController extends Controller
     public function changeStatus(LoanStatusRequest $request, $id): JsonResponse
     {
         $user = $request->user();
-        $loan = Loan::where('user_id', $user->id)->findOrFail($id);
+        $loan = Loan::where('user_id', $user->id)->with(['borrower', 'user'])->findOrFail($id);
         $data = $request->validated();
         $status = strtolower($data['status']);
         $comments = $request->input('comments');
+        $sendEmail = $request->input('sendEmail', false);
 
         try {
             switch ($status) {
                 case 'approved':
                     $this->workflowService->approveApplication($loan, $user, $comments);
+                    // Send approval email if requested and borrower has email
+                    if ($sendEmail && $loan->borrower && $loan->borrower->email) {
+                        Mail::to($loan->borrower->email)->send(new LoanApprovedMail($loan));
+                    }
                     break;
                 case 'rejected':
                     $this->workflowService->rejectApplication($loan, $user, $comments);
                     break;
                 case 'active': // Disbursed
                     $this->workflowService->disburseLoan($loan, $user, $comments);
+                    break;
+                case 'closed':
+                    // Fallback for simple transitions
+                    $action = 'update_status';
+                    $this->workflowService->transition($loan, $user, $action, $status, $comments);
+                    // Send closure email if requested and borrower has email
+                    if ($sendEmail && $loan->borrower && $loan->borrower->email) {
+                        Mail::to($loan->borrower->email)->send(new LoanClosedMail($loan));
+                    }
                     break;
                 default:
                     // Fallback for simple transitions like 'cancelled', 'paid', 'defaulted'
@@ -120,7 +143,7 @@ class LoansController extends Controller
             }
             return response()->json(['success' => true, 'message' => "Loan status updated to $status", 'data' => $loan]);
         } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            return $this->logAndResponseError($e, $e->getMessage(), 422);
         }
     }
 
@@ -128,14 +151,61 @@ class LoansController extends Controller
     public function addPayment(LoanPaymentRequest $request, $id): JsonResponse
     {
         $user = $request->user();
-        $loan = Loan::where('user_id', $user->id)->findOrFail($id);
+        $loan = Loan::where('user_id', $user->id)->with(['borrower', 'user'])->findOrFail($id);
         $data = $request->validated();
+        $sendEmail = $request->input('sendEmail', false);
 
         try {
             $payment = $this->repaymentService->recordPayment($loan, $data);
+
+            // Calculate balance after payment
+            $totalPaid = $loan->payments()->sum('amountPaid');
+            $totalDue = (float) $loan->principal + ((float) $loan->principal * (float) $loan->interestRate / 100.0);
+            $balance = $totalDue - (float) $totalPaid;
+
+            // Send payment confirmation email if requested and borrower has email
+            if ($sendEmail && $loan->borrower && $loan->borrower->email) {
+                Mail::to($loan->borrower->email)->send(new PaymentReceivedMail(
+                    $loan,
+                    $data['amountPaid'],
+                    $data['paidDate'],
+                    $balance
+                ));
+            }
+
             return response()->json(['success' => true, 'message' => 'Payment recorded', 'data' => $payment], 201);
         } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            return $this->logAndResponseError($e, $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Send payment reminder email to borrower
+     */
+    #[OA\Post(path: '/loans/{id}/send-reminder', summary: 'Send payment reminder email', tags: ['Loans'], security: [['bearerAuth' => []]], responses: [new OA\Response(response: 200, description: 'OK'), new OA\Response(response: 404, description: 'Not found'), new OA\Response(response: 422, description: 'Validation error')])]
+    public function sendReminderEmail(Request $request, $id): JsonResponse
+    {
+        $user = $request->user();
+        $loan = Loan::where('user_id', $user->id)->with(['borrower', 'user'])->findOrFail($id);
+
+        // Check if borrower has an email
+        if (!$loan->borrower || !$loan->borrower->email) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Borrower does not have an email address'
+            ], 422);
+        }
+
+        // Calculate balance
+        $totalPaid = $loan->payments()->sum('amountPaid');
+        $totalDue = (float) $loan->principal + ((float) $loan->principal * (float) $loan->interestRate / 100.0);
+        $balance = $totalDue - (float) $totalPaid;
+
+        try {
+            Mail::to($loan->borrower->email)->send(new PaymentReminderMail($loan, $balance));
+            return response()->json(['success' => true, 'message' => 'Reminder email sent successfully']);
+        } catch (\Exception $e) {
+            return $this->logAndResponseError($e, 'Failed to send reminder email', 500);
         }
     }
 }
