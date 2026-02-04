@@ -30,7 +30,7 @@ jobs:
 
       - name: Create deployment archive
         run: |
-          tar -czf /tmp/backend-deploy.tar.gz \
+          tar -czf ../backend-deploy.tar.gz \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='tests' \
@@ -39,6 +39,7 @@ jobs:
             --exclude='README.md' \
             --exclude='storage' \
             .
+          mv ../backend-deploy.tar.gz backend-deploy.tar.gz
 
       - name: Create backup on remote server
         uses: appleboy/ssh-action@v1.0.0
@@ -69,7 +70,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
           port: ${{ secrets.SSH_PORT }}
-          source: "/tmp/backend-deploy.tar.gz"
+          source: "backend-deploy.tar.gz"
           target: "/tmp/"
           strip_components: 0
 
