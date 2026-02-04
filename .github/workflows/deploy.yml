@@ -5,36 +5,154 @@ on:
     branches:
       - production
 
-jobs:
-  web-deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
+env:
+  PHP_VERSION: '8.3' # Matching your local PHP version
 
+jobs:
+  deploy-backend:
+    name: Deploy Backend
+    runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
-          extensions: mbstring, bcmath, gd, pdo_mysql
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: mbstring, xml, ctype, json, mysql, pdo, pdo_mysql
+          coverage: none
 
-      - name: Install Composer Dependencies
-        run: composer install --no-dev --optimize-autoloader --prefer-dist
+      - name: Install Composer dependencies
+        run: |
+          composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
 
-      # We remove .gitignore so that the FTP deployer (which respects gitignore by default)
-      # uploads the 'vendor' directory and other ignored build artifacts.
-      - name: Remove .gitignore
-        run: rm .gitignore
+      - name: Create deployment archive
+        run: |
+          tar -czf backend-deploy.tar.gz \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='tests' \
+            --exclude='phpunit.xml' \
+            --exclude='.env.example' \
+            --exclude='README.md' \
+            --exclude='storage' \
+            .
 
-      - name: SFTP Deploy
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+      - name: Create backup on remote server
+        uses: appleboy/ssh-action@v1.0.0
         with:
-          username: ${{ secrets.FTP_USERNAME }}
-          server: ${{ secrets.FTP_SERVER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: 65002 
-          local_path: './'
-          remote_path: 'domains/cryndolapi.mentalhealthplatform.org/cryndolapi/'
-          sftpArgs: '-o ConnectTimeout=5' 
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            # Define paths
+            DOMAIN_PATH="/home/${{ secrets.SSH_USER }}/domains/${{ secrets.BACKEND_DOMAIN }}"
+            APP_PATH="$DOMAIN_PATH/cryndolapi"
+            
+            # Create backup if app exists
+            if [ -d "$APP_PATH" ]; then
+                cd "$APP_PATH"
+                tar -czf ../backend-backup-$(date +%Y%m%d_%H%M%S).tar.gz \
+                  --exclude='vendor' \
+                  --exclude='storage/logs/*' \
+                  --exclude='storage/framework/cache/*' \
+                  . || true
+            fi
+
+      - name: Upload deployment archive
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "backend-deploy.tar.gz"
+          target: "/tmp/"
+          strip_components: 0
+
+      - name: Extract and configure on remote server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            # Define paths
+            DOMAIN_PATH="/home/${{ secrets.SSH_USER }}/domains/${{ secrets.BACKEND_DOMAIN }}"
+            APP_PATH="$DOMAIN_PATH/cryndolapi"
+            PUBLIC_HTML="$DOMAIN_PATH/public_html"
+
+            # Create destination directory if it doesn't exist
+            mkdir -p "$APP_PATH"
+
+            # Extract to backend directory
+            cd "$APP_PATH"
+            tar -xzf /tmp/backend-deploy.tar.gz
+            rm /tmp/backend-deploy.tar.gz
+            
+            # Set proper permissions
+            find . -type d -exec chmod 755 {} \;
+            find . -type f -exec chmod 644 {} \;
+            
+            # Persist gitignore-style exclusions for storage if manually created
+            if [ ! -d "storage" ]; then
+                mkdir -p storage/app/public storage/framework/cache storage/framework/sessions storage/framework/views storage/logs
+            fi
+            chmod -R 775 storage
+            chmod -R 775 bootstrap/cache
+            
+            # Install composer dependencies on server (if composer is available and needed)
+            # We already installed them locally and uploaded vendor, so this is just failsafe
+            if command -v composer &> /dev/null; then
+              echo "Installing Composer dependencies on server..."
+              composer install --no-dev --optimize-autoloader --no-interaction
+            fi
+            
+            # Clear Laravel caches
+            if [ -f artisan ]; then
+              echo "Clearing Laravel caches..."
+              php artisan config:cache
+              php artisan route:cache
+              php artisan view:cache
+              
+              # Run migrations? 
+              # Uncomment the next line if you want automatic migrations
+              # php artisan migrate --force
+            fi
+            
+            # Create storage symlinks
+            echo "Creating storage symlinks..."
+            
+            # 1. Create symlink: cryndolapi/public/storage -> cryndolapi/storage/app/public
+            if [ -L "$APP_PATH/public/storage" ] || [ -d "$APP_PATH/public/storage" ]; then
+                rm -rf "$APP_PATH/public/storage"
+            fi
+            ln -s "$APP_PATH/storage/app/public" "$APP_PATH/public/storage"
+            
+            # 2. Create symlink: public_html/storage -> cryndolapi/public/storage
+            if [ -L "$PUBLIC_HTML/storage" ] || [ -d "$PUBLIC_HTML/storage" ]; then
+                rm -rf "$PUBLIC_HTML/storage"
+            fi
+            ln -s "$APP_PATH/public/storage" "$PUBLIC_HTML/storage"
+            
+            echo "Storage symlinks created successfully!"
+            
+            # Ensure public_html/index.php points to cryndolapi/public/index.php
+            # This replaces the default index.php with a symlink to our app's index.php
+            echo "Linking public_html/index.php..."
+            rm -f "$PUBLIC_HTML/index.php"
+            ln -sf "$APP_PATH/public/index.php" "$PUBLIC_HTML/index.php"
+            
+            # Copy other public assets to public_html if needed (e.g. robots.txt, favicon.ico)
+            # cp -r "$APP_PATH/public/"* "$PUBLIC_HTML/"
+            
+            echo "Backend deployment completed on server!"
+
+      - name: Backend deployment complete
+        run: |
+          echo "✅ Backend deployed successfully!"
+          echo "🌐 URL: https://${{ secrets.BACKEND_DOMAIN }}"
