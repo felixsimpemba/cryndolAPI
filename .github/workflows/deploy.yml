@@ -49,7 +49,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             # Define paths
-            DOMAIN_PATH="/home/${{ secrets.SSH_USER }}/domains/${{ secrets.BACKEND_DOMAIN }}"
+            DOMAIN_PATH="/home/${{ secrets.SSH_USER }}/domains/cryndolapi.mentalhealthplatform.org"
             APP_PATH="$DOMAIN_PATH/cryndolapi"
             
             # Create backup if app exists
@@ -82,7 +82,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             # Define paths
-            DOMAIN_PATH="/home/${{ secrets.SSH_USER }}/domains/${{ secrets.BACKEND_DOMAIN }}"
+            DOMAIN_PATH="/home/${{ secrets.SSH_USER }}/domains/cryndolapi.mentalhealthplatform.org"
             APP_PATH="$DOMAIN_PATH/cryndolapi"
             PUBLIC_HTML="$DOMAIN_PATH/public_html"
 
