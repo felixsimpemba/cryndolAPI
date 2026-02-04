@@ -28,18 +28,13 @@ jobs:
       - name: Remove .gitignore
         run: rm .gitignore
 
-      - name: Sync files
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      - name: SFTP Deploy
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
         with:
-          server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
+          server: ${{ secrets.FTP_SERVER }}
           password: ${{ secrets.FTP_PASSWORD }}
-          # Uploads to the specific project folder found in the user's home directory
-          server-dir: domains/cryndolapi.mentalhealthplatform.org/cryndolapi/
-          # Exclude important files that shouldn't be overwritten
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-            .env
-            storage/** 
+          port: 65002 
+          local_path: './'
+          remote_path: 'domains/cryndolapi.mentalhealthplatform.org/cryndolapi/'
+          sftp_args: '-o ConnectTimeout=5' 
