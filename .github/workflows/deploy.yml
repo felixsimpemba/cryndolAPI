@@ -37,4 +37,4 @@ jobs:
           port: 65002 
           local_path: './'
           remote_path: 'domains/cryndolapi.mentalhealthplatform.org/cryndolapi/'
-          sftp_args: '-o ConnectTimeout=5' 
+          sftpArgs: '-o ConnectTimeout=5' 
