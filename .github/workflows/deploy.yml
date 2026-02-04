@@ -1,0 +1,45 @@
+name: Deploy Backend to Production
+
+on:
+  push:
+    branches:
+      - production
+
+jobs:
+  web-deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, bcmath, gd, pdo_mysql
+
+      - name: Install Composer Dependencies
+        run: composer install --no-dev --optimize-autoloader --prefer-dist
+
+      # We remove .gitignore so that the FTP deployer (which respects gitignore by default)
+      # uploads the 'vendor' directory and other ignored build artifacts.
+      - name: Remove .gitignore
+        run: rm .gitignore
+
+      - name: Sync files
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          # Uploads to the specific project folder found in the user's home directory
+          server-dir: domains/cryndolapi.mentalhealthplatform.org/cryndolapi/
+          # Exclude important files that shouldn't be overwritten
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            .env
+            storage/** 

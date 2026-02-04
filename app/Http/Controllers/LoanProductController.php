@@ -13,7 +13,7 @@ class LoanProductController extends Controller
      */
     public function index()
     {
-        $products = LoanProduct::all();
+        $products = LoanProduct::where('user_id', auth()->id())->get();
         return response()->json([
             'status' => 'success',
             'data' => $products
@@ -49,7 +49,9 @@ class LoanProductController extends Controller
             ], 422);
         }
 
-        $product = LoanProduct::create($request->all());
+        $data = $request->all();
+        $data['user_id'] = auth()->id();
+        $product = LoanProduct::create($data);
 
         return response()->json([
             'status' => 'success',
@@ -63,7 +65,7 @@ class LoanProductController extends Controller
      */
     public function show($id)
     {
-        $product = LoanProduct::find($id);
+        $product = LoanProduct::where('user_id', auth()->id())->find($id);
 
         if (!$product) {
             return response()->json(['status' => 'error', 'message' => 'Product not found'], 404);
@@ -77,7 +79,7 @@ class LoanProductController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $product = LoanProduct::find($id);
+        $product = LoanProduct::where('user_id', auth()->id())->find($id);
 
         if (!$product) {
             return response()->json(['status' => 'error', 'message' => 'Product not found'], 404);
@@ -114,7 +116,7 @@ class LoanProductController extends Controller
      */
     public function destroy($id)
     {
-        $product = LoanProduct::find($id);
+        $product = LoanProduct::where('user_id', auth()->id())->find($id);
 
         if (!$product) {
             return response()->json(['status' => 'error', 'message' => 'Product not found'], 404);

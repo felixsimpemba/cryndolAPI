@@ -18,7 +18,12 @@ class DisbursementController extends Controller
 
     public function index(Request $request)
     {
-        $disbursements = Disbursement::with('loan.borrower')->orderByDesc('id')->paginate(15);
+        $disbursements = Disbursement::with('loan.borrower')
+            ->whereHas('loan', function ($query) {
+                $query->where('user_id', auth()->id());
+            })
+            ->orderByDesc('id')
+            ->paginate(15);
         return response()->json(['status' => 'success', 'data' => $disbursements]);
     }
 

@@ -25,8 +25,14 @@ class LoanProduct extends Model
         'processing_fee_value',
         'late_penalty_type',
         'late_penalty_value',
+        'user_id',
         'is_active',
     ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 
     protected $casts = [
         'interest_rate' => 'decimal:2',
