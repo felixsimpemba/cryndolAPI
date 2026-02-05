@@ -38,17 +38,25 @@ class LoanAgreementPdfService
         // Output the HTML content
         $pdf->writeHTML($html, true, false, true, false, '');
 
-        // Save to temp directory
-        $tempDir = storage_path('app/temp');
-        if (!file_exists($tempDir)) {
-            mkdir($tempDir, 0755, true);
+        // Ensure temp directory exists using Storage
+        if (!\Illuminate\Support\Facades\Storage::exists('temp')) {
+            \Illuminate\Support\Facades\Storage::makeDirectory('temp');
         }
 
         $filename = 'loan_agreement_' . $loan->id . '_' . now()->format('YmdHis') . '.pdf';
-        $filepath = $tempDir . '/' . $filename;
+        // Get absolute path to storage/app/temp
+        $tempPath = storage_path('app/temp');
+        
+        // Ensure directory exists physically if not created by Storage (sometimes needed if using local driver but accessing via absolute path)
+        if (!file_exists($tempPath)) {
+            mkdir($tempPath, 0755, true);
+        }
 
+        $filepath = $tempPath . '/' . $filename;
+
+        // Save file
         $pdf->Output($filepath, 'F');
-
+        
         return $filepath;
     }
 

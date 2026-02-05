@@ -236,6 +236,11 @@ class DocumentController extends Controller
                 'Content-Type' => 'application/pdf',
             ])->deleteFileAfterSend(true);
 
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Loan not found or access denied.'
+            ], 404);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,

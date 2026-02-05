@@ -75,28 +75,97 @@ class AuthController extends Controller
     public function registerPersonal(RegisterPersonalRequest $request): JsonResponse
     {
         try {
-            $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+            // Check if user exists
+            $user = User::where('email', $request->email)->first();
 
-            $user = User::create([
-                'fullName' => $request->fullName,
-                'email' => $request->email,
-                'phoneNumber' => $request->phoneNumber,
-                'password' => $request->password,
-                'acceptTerms' => $request->acceptTerms,
-                'otp_code' => $otp,
-                'otp_expires_at' => Carbon::now()->addMinutes(10),
-                'working_capital' => $request->working_capital ?? 0,
-            ]);
+            if ($user) {
+                // If user exists and is verified, deny registration
+                if ($user->email_verified_at) {
+                    return response()->json([
+                        'message' => 'The email has already been taken.',
+                        'errors' => ['email' => ['The email has already been taken.']]
+                    ], 422);
+                }
 
-            if ($request->filled('working_capital') && $request->working_capital > 0) {
-                Transaction::create([
-                    'user_id' => $user->id,
-                    'type' => 'inflow',
-                    'category' => 'capital_injection',
-                    'amount' => $request->working_capital,
-                    'description' => 'Initial Working Capital',
-                    'occurred_at' => Carbon::now(),
+                // If user exists but NOT verified, check if phone number is taken by ANOTHER user
+                $phoneExists = User::where('phoneNumber', $request->phoneNumber)
+                    ->where('id', '!=', $user->id)
+                    ->exists();
+
+                if ($phoneExists) {
+                    return response()->json([
+                        'message' => 'The phone number has already been taken.',
+                        'errors' => ['phoneNumber' => ['The phone number has already been taken.']]
+                    ], 422);
+                }
+
+                // Update existing unverified user
+                $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+                
+                $user->update([
+                    'fullName' => $request->fullName,
+                    'phoneNumber' => $request->phoneNumber,
+                    'password' => $request->password, // Will be hashed by cast
+                    'acceptTerms' => $request->acceptTerms,
+                    'otp_code' => $otp,
+                    'otp_expires_at' => Carbon::now()->addMinutes(10),
+                    'working_capital' => $request->working_capital ?? 0,
                 ]);
+
+                // Handle working capital transaction (remove old one if exists, add new one)
+                if ($request->filled('working_capital')) {
+                    // Remove old initial capital transaction
+                    Transaction::where('user_id', $user->id)
+                        ->where('category', 'capital_injection')
+                        ->where('description', 'Initial Working Capital')
+                        ->delete();
+
+                    if ($request->working_capital > 0) {
+                        Transaction::create([
+                            'user_id' => $user->id,
+                            'type' => 'inflow',
+                            'category' => 'capital_injection',
+                            'amount' => $request->working_capital,
+                            'description' => 'Initial Working Capital',
+                            'occurred_at' => Carbon::now(),
+                        ]);
+                    }
+                }
+            } else {
+                // New User Registration
+                
+                // Check if phone number is taken
+                $phoneExists = User::where('phoneNumber', $request->phoneNumber)->exists();
+                if ($phoneExists) {
+                    return response()->json([
+                        'message' => 'The phone number has already been taken.',
+                        'errors' => ['phoneNumber' => ['The phone number has already been taken.']]
+                    ], 422);
+                }
+
+                $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+
+                $user = User::create([
+                    'fullName' => $request->fullName,
+                    'email' => $request->email,
+                    'phoneNumber' => $request->phoneNumber,
+                    'password' => $request->password,
+                    'acceptTerms' => $request->acceptTerms,
+                    'otp_code' => $otp,
+                    'otp_expires_at' => Carbon::now()->addMinutes(10),
+                    'working_capital' => $request->working_capital ?? 0,
+                ]);
+
+                if ($request->filled('working_capital') && $request->working_capital > 0) {
+                    Transaction::create([
+                        'user_id' => $user->id,
+                        'type' => 'inflow',
+                        'category' => 'capital_injection',
+                        'amount' => $request->working_capital,
+                        'description' => 'Initial Working Capital',
+                        'occurred_at' => Carbon::now(),
+                    ]);
+                }
             }
 
             // Send OTP Email

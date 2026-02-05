@@ -23,8 +23,8 @@ class RegisterPersonalRequest extends FormRequest
     {
         return [
             'fullName' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email',
-            'phoneNumber' => 'required|string|max:20|unique:users,phoneNumber',
+            'email' => 'required|email|max:255',
+            'phoneNumber' => 'required|string|max:20',
             'password' => [
                 'required',
                 'string',
