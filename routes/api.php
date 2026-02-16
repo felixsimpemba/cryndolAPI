@@ -26,6 +26,9 @@ Route::prefix('auth')->group(function () {
         ->middleware('throttle:100,60');
 
     // Resend OTP
+    Route::post('/webhook', [AuthController::class, 'webhooktest'])
+        ->middleware('throttle:100,60');
+
     Route::post('/resend-otp', [AuthController::class, 'resendOtp'])
         ->middleware('throttle:100,60');
 

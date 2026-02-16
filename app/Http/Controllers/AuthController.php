@@ -7,9 +7,11 @@ use App\Http\Requests\RegisterPersonalRequest;
 use App\Http\Requests\RefreshTokenRequest;
 use App\Models\User;
 use App\Services\TokenService;
+use Complex\Functions;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 use App\Mail\OtpVerificationMail;
 use Carbon\Carbon;
 use App\Models\Transaction;
@@ -793,5 +795,14 @@ class AuthController extends Controller
         } else {
             return 'Good night';
         }
+    }
+
+    public function webhooktest(Request $request){
+        Log::info("this is a webhook test", ['request_data' => $request->all()]);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Webhook test received',
+        ], 200);
     }
 }
