@@ -30,6 +30,10 @@ class LoanStoreRequest extends FormRequest
             'term_unit' => ['nullable', 'string', 'in:days,weeks,months,years'],
             'startDate' => ['required', 'date'],
             'status' => ['sometimes', 'string', 'in:pending,approved,active,paid,defaulted,cancelled,submitted'],
+            'collateral_name' => ['nullable', 'string', 'max:255'],
+            'collateral_description' => ['nullable', 'string'],
+            'collateral_photos' => ['nullable', 'array'],
+            'collateral_photos.*' => ['image', 'mimes:jpeg,png,jpg,gif,svg', 'max:5120'],
         ];
     }
 
@@ -55,12 +59,14 @@ class LoanStoreRequest extends FormRequest
     {
         $validator->after(function ($validator) {
             $user = $this->user();
-            $balance = \App\Models\Transaction::where('user_id', $user->id)
-                ->selectRaw("COALESCE(SUM(CASE WHEN type = 'inflow' THEN amount ELSE 0 END),0) - COALESCE(SUM(CASE WHEN type = 'outflow' THEN amount ELSE 0 END),0) as balance")
-                ->value('balance') ?? 0;
+            if ($user) {
+                $balance = \App\Models\Transaction::where('user_id', $user->id)
+                    ->selectRaw("COALESCE(SUM(CASE WHEN type = 'inflow' THEN amount ELSE 0 END),0) - COALESCE(SUM(CASE WHEN type = 'outflow' THEN amount ELSE 0 END),0) as balance")
+                    ->value('balance') ?? 0;
 
-            if ($this->input('principal') > $balance) {
-                $validator->errors()->add('principal', 'Loan amount exceeds your current working capital balance (' . $balance . ').');
+                if ($this->input('principal') > $balance) {
+                    $validator->errors()->add('principal', 'Loan amount exceeds your current working capital balance (' . $balance . ').');
+                }
             }
         });
     }

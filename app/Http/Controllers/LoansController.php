@@ -27,7 +27,7 @@ class LoansController extends Controller
         $user = $request->user();
         $q = Loan::query()
             ->where('user_id', $user->id)
-            ->with(['borrower'])
+            ->with(['borrower', 'collateral'])
             ->withSum('payments as totalPaid', 'amountPaid');
 
         if ($status = $request->query('status')) {
@@ -45,16 +45,35 @@ class LoansController extends Controller
         // Ensure borrower belongs to this user
         Borrower::where('user_id', $user->id)->findOrFail($data['borrower_id']);
         $data['user_id'] = $user->id;
-        $data['totalPaid'] = $data['totalPaid'] ?? 0;
-        $loan = Loan::create($data);
-        return response()->json(['success' => true, 'message' => 'Loan created', 'data' => $loan], 201);
+        $loan = DB::transaction(function () use ($data, $user, $request) {
+            $loan = Loan::create($data);
+
+            // Handle collateral
+            if ($request->filled('collateral_name') || $request->hasFile('collateral_photos')) {
+                $photos = [];
+                if ($request->hasFile('collateral_photos')) {
+                    foreach ($request->file('collateral_photos') as $photo) {
+                        $photos[] = $photo->store('collaterals/' . $loan->id, 'public');
+                    }
+                }
+
+                $loan->collateral()->create([
+                    'name' => $request->input('collateral_name', 'Unnamed Collateral'),
+                    'description' => $request->input('collateral_description'),
+                    'photos' => $photos,
+                ]);
+            }
+            return $loan;
+        });
+
+        return response()->json(['success' => true, 'message' => 'Loan created', 'data' => $loan->load('collateral')], 201);
     }
 
     #[OA\Get(path: '/loans/{id}', summary: 'Get loan details', tags: ['Loans'], security: [['bearerAuth' => []]], responses: [new OA\Response(response: 200, description: 'OK'), new OA\Response(response: 404, description: 'Not found')])]
     public function show(Request $request, $id): JsonResponse
     {
         $user = $request->user();
-        $loan = Loan::where('user_id', $user->id)->with(['borrower', 'payments'])->findOrFail($id);
+        $loan = Loan::where('user_id', $user->id)->with(['borrower', 'payments', 'collateral'])->findOrFail($id);
         // aggregate totals
         $totalPaid = $loan->payments()->sum('amountPaid');
         $totalDue = (float) $loan->principal + ((float) $loan->principal * (float) $loan->interestRate / 100.0);
@@ -78,8 +97,34 @@ class LoansController extends Controller
         $user = $request->user();
         $loan = Loan::where('user_id', $user->id)->findOrFail($id);
         $data = $request->validated();
-        $loan->update($data);
-        return response()->json(['success' => true, 'message' => 'Loan updated', 'data' => $loan]);
+        DB::transaction(function () use ($loan, $data, $request) {
+            $loan->update($data);
+
+            // Handle collateral update
+            if ($request->filled('collateral_name') || $request->hasFile('collateral_photos')) {
+                $collateral = $loan->collateral ?: new \App\Models\Collateral(['loan_id' => $loan->id]);
+                
+                if ($request->filled('collateral_name')) {
+                    $collateral->name = $request->input('collateral_name');
+                }
+                
+                if ($request->has('collateral_description')) {
+                    $collateral->description = $request->input('collateral_description');
+                }
+
+                if ($request->hasFile('collateral_photos')) {
+                    $photos = $collateral->photos ?: [];
+                    foreach ($request->file('collateral_photos') as $photo) {
+                        $photos[] = $photo->store('collaterals/' . $loan->id, 'public');
+                    }
+                    $collateral->photos = $photos;
+                }
+
+                $collateral->save();
+            }
+        });
+
+        return response()->json(['success' => true, 'message' => 'Loan updated', 'data' => $loan->load('collateral')]);
     }
 
     #[OA\Delete(path: '/loans/{id}', summary: 'Delete loan', tags: ['Loans'], security: [['bearerAuth' => []]], responses: [new OA\Response(response: 200, description: 'OK'), new OA\Response(response: 404, description: 'Not found')])]

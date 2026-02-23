@@ -39,7 +39,7 @@ class Loan extends Model
 		if (!$this->startDate)
 			return null;
 
-		$date = $this->startDate->copy();
+		$date = \Illuminate\Support\Carbon::parse($this->startDate);
 		$term = (int) $this->termMonths; // This column represents the duration value
 		$unit = $this->term_unit ?? 'months'; // Default to months
 
@@ -74,6 +74,11 @@ class Loan extends Model
 	public function loanProduct()
 	{
 		return $this->belongsTo(LoanProduct::class);
+	}
+
+	public function collateral()
+	{
+		return $this->hasOne(Collateral::class);
 	}
 }
 

@@ -27,6 +27,10 @@ class LoanUpdateRequest extends FormRequest
             'termMonths' => ['sometimes', 'integer', 'min:1'],
             'startDate' => ['sometimes', 'date'],
             'status' => ['sometimes', 'string', 'in:PENDING,APPROVED,ACTIVE,PAID,DEFAULTED,CANCELLED'],
+            'collateral_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'collateral_description' => ['sometimes', 'nullable', 'string'],
+            'collateral_photos' => ['sometimes', 'nullable', 'array'],
+            'collateral_photos.*' => ['image', 'mimes:jpeg,png,jpg,gif,svg', 'max:5120'],
         ];
     }
 

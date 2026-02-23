@@ -138,6 +138,25 @@ class DashboardController extends Controller
 			->whereIn('status', ['scheduled', 'overdue'])
 			->count();
 
+		$overdueAmount = LoanPayment::whereHas('loan', function ($q) use ($user) {
+			$q->where('user_id', $user->id)->where('status', 'active');
+		})
+			->where('status', 'overdue')
+			->sum(DB::raw('(amountScheduled - amountPaid)'));
+
+		$dueThisWeekAmount = LoanPayment::whereHas('loan', function ($q) use ($user) {
+			$q->where('user_id', $user->id)->where('status', 'active');
+		})
+			->whereBetween('scheduledDate', [Carbon::today(), Carbon::today()->addDays(7)])
+			->sum(DB::raw('(amountScheduled - amountPaid)'));
+
+		$collectedToday = LoanPayment::whereHas('loan', function ($q) use ($user) {
+			$q->where('user_id', $user->id);
+		})
+			->whereDate('paidDate', Carbon::today())
+			->where('status', 'paid')
+			->sum('amountPaid');
+
 		$profitTrend = $this->calculateProfitTrend($user);
 
 		return response()->json([
@@ -147,6 +166,9 @@ class DashboardController extends Controller
 			'totalPaidAmount' => round((float) $moneyCollected, 2),
 			'currentBalance' => round((float) $currentBalance, 2),
 			'loansDueInNext7Days' => $loansDueInNext7Days,
+			'overdueAmount' => round((float) $overdueAmount, 2),
+			'dueThisWeekAmount' => round((float) $dueThisWeekAmount, 2),
+			'collectedToday' => round((float) $collectedToday, 2),
 			'profitTrend' => $profitTrend,
 			'workingCapital' => round((float) $workingCapital, 2),
 			'estimatedProfit' => round((float) $estimatedProfit, 2), // Now purely Unrealized
