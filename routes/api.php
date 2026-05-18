@@ -7,6 +7,8 @@ use App\Http\Controllers\BusinessProfileController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CustomersController;
 use App\Http\Controllers\LoansController;
+use App\Http\Controllers\ReportingController;
+use App\Http\Controllers\SearchController;
 
 // Public authentication routes with rate limiting
 Route::prefix('auth')->group(function () {
@@ -47,6 +49,10 @@ Route::prefix('auth')->group(function () {
     // Confirm Account Deletion
     Route::post('/confirm-deletion', [AuthController::class, 'confirmDeletion'])
         ->middleware('throttle:10,60');
+
+    // Accept Team Invitation
+    Route::post('/accept-invite', [AuthController::class, 'acceptInvite'])
+        ->middleware('throttle:10,60');
 });
 
 // Protected routes (require authentication with rate limiting)
@@ -64,11 +70,16 @@ Route::middleware(['auth:sanctum', 'throttle:1000,60'])->prefix('auth')->group(f
 // Dashboard and core resources (protected)
 Route::middleware(['auth:sanctum', 'throttle:1000,60'])->group(function () {
     Route::get('/dashboard/summary/{businessId}', [DashboardController::class, 'summary']);
+
+    // Global Search
+    Route::get('/search/global', [SearchController::class, 'globalSearch']);
+    
     // Capital
     Route::post('/capital/add', [\App\Http\Controllers\CapitalController::class, 'store']);
     Route::put('/capital/update', [\App\Http\Controllers\CapitalController::class, 'update']);
 
     // Customers
+    Route::get('/customers/verify-nrc/{nrc}', [CustomersController::class, 'verifyNrc'])->where('nrc', '.*');
     Route::get('/customers', [CustomersController::class, 'index']);
     Route::post('/customers', [CustomersController::class, 'store']);
     Route::get('/customers/{id}', [CustomersController::class, 'show']);
@@ -106,8 +117,8 @@ Route::middleware(['auth:sanctum', 'throttle:1000,60'])->group(function () {
     Route::get('/disbursements', [\App\Http\Controllers\DisbursementController::class, 'index']);
     Route::post('/disbursements/{id}/process', [\App\Http\Controllers\DisbursementController::class, 'process']);
 
-    // Loan Product Routes
-    Route::apiResource('loan-products', \App\Http\Controllers\LoanProductController::class);
+    // Loan Template Routes
+    Route::apiResource('loan-templates', \App\Http\Controllers\LoanTemplateController::class);
 
     // Settings
     Route::prefix('settings')->group(function () {
@@ -118,10 +129,24 @@ Route::middleware(['auth:sanctum', 'throttle:1000,60'])->group(function () {
         Route::put('/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications']);
 
         // Team Management
-        Route::get('/team', [\App\Http\Controllers\TeamMemberController::class, 'index']);
-        Route::post('/team', [\App\Http\Controllers\TeamMemberController::class, 'store']);
-        Route::put('/team/{id}', [\App\Http\Controllers\TeamMemberController::class, 'update']);
-        Route::delete('/team/{id}', [\App\Http\Controllers\TeamMemberController::class, 'destroy']);
+        Route::middleware(['role:super_admin,admin'])->group(function () {
+            Route::get('/team', [\App\Http\Controllers\TeamMemberController::class, 'index']);
+            Route::post('/team', [\App\Http\Controllers\TeamMemberController::class, 'store']);
+            Route::put('/team/{id}', [\App\Http\Controllers\TeamMemberController::class, 'update']);
+            Route::delete('/team/{id}', [\App\Http\Controllers\TeamMemberController::class, 'destroy']);
+        });
+    });
+
+    // Collections
+    Route::prefix('collections')->group(function () {
+        Route::get('/', [\App\Http\Controllers\CollectionController::class, 'index']);
+        Route::get('/stats', [\App\Http\Controllers\CollectionController::class, 'stats']);
+    });
+
+    // Reporting & BI
+    Route::prefix('reporting')->group(function () {
+        Route::get('/overview', [ReportingController::class, 'overview']);
+        Route::get('/branches', [ReportingController::class, 'branchComparison']);
     });
 });
 

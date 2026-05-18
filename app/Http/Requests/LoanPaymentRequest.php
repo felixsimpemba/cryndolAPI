@@ -24,7 +24,7 @@ class LoanPaymentRequest extends FormRequest
         return [
             'paidDate' => ['required', 'date'],
             'amountPaid' => ['required', 'numeric', 'min:0.01'],
-            'notes' => ['sometimes', 'string', 'max:1000'],
+            'notes' => ['nullable', 'string', 'max:1000'],
         ];
     }
 

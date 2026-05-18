@@ -2,43 +2,11 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
-class LoanPayment extends Model
-{
-	use HasFactory;
-
-	protected $fillable = [
-		'loan_id',
-		'scheduledDate',
-		'paidDate',
-		'amountScheduled',
-		'amountPaid',
-		'principal_portion',
-		'interest_portion',
-		'fee_portion',
-		'penalty_portion',
-		'payment_method',
-		'transaction_reference',
-		'notes',
-		'status',
-	];
-
-	protected function casts(): array
-	{
-		return [
-			'scheduledDate' => 'date',
-			'paidDate' => 'date',
-			'amountScheduled' => 'decimal:2',
-			'amountPaid' => 'decimal:2',
-		];
-	}
-
-	public function loan()
-	{
-		return $this->belongsTo(Loan::class);
-	}
+class LoanPayment extends Model { 
+    use HasUuids; 
+    protected $guarded = []; 
+    public function loan() { return $this->belongsTo(Loan::class); } 
 }
-
-

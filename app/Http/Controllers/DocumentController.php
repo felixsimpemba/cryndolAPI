@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Document;
-use App\Models\Borrower;
+use App\Models\Customer;
 use App\Models\Loan;
 use App\Models\Transaction;
 use App\Models\LoanPayment;
@@ -25,13 +25,15 @@ class DocumentController extends Controller
         $this->pdfService = $pdfService;
     }
 
-    public function index(Request $request, $borrowerId)
+    public function index(Request $request, $customerId)
     {
-        $documents = Document::where('borrower_id', $borrowerId)->get();
+        $documents = Document::where('entity_type', 'CUSTOMER')
+            ->where('entity_id', $customerId)
+            ->get();
         return response()->json(['status' => 'success', 'data' => $documents]);
     }
 
-    public function store(Request $request, $borrowerId)
+    public function store(Request $request, $customerId)
     {
         $validator = Validator::make($request->all(), [
             'document_type' => 'required|string',
@@ -43,23 +45,27 @@ class DocumentController extends Controller
             return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
         }
 
-        $borrower = Borrower::find($borrowerId);
-        if (!$borrower) {
-            return response()->json(['status' => 'error', 'message' => 'Borrower not found'], 404);
+        $customer = Customer::find($customerId);
+        if (!$customer) {
+            return response()->json(['status' => 'error', 'message' => 'Customer not found'], 404);
         }
 
         if ($request->hasFile('file')) {
             $file = $request->file('file');
             $originalName = $file->getClientOriginalName();
-            $path = $file->store('documents/' . $borrowerId, 'public');
+            $fileSize = $file->getSize();
+            $path = $file->store('documents/' . $customerId, 'public');
 
             $document = Document::create([
-                'borrower_id' => $borrowerId,
+                'business_id' => $request->user()->business_id,
+                'entity_type' => 'CUSTOMER',
+                'entity_id' => $customerId,
                 'document_type' => $request->document_type,
-                'file_path' => $path,
-                'original_name' => $originalName,
+                'file_name' => $originalName,
+                'file_url' => $path,
+                'file_size' => $fileSize,
+                'uploaded_by' => $request->user()->id,
                 'expiry_date' => $request->expiry_date,
-                'verification_status' => 'pending',
             ]);
 
             return response()->json([
@@ -81,7 +87,7 @@ class DocumentController extends Controller
         }
 
         // Delete file from storage
-        Storage::disk('public')->delete($document->file_path);
+        Storage::disk('public')->delete($document->file_url);
 
         $document->delete();
 
@@ -94,7 +100,7 @@ class DocumentController extends Controller
     public function exportLoans(Request $request)
     {
         try {
-            $query = Loan::with(['borrower', 'user'])->where('user_id', $request->user()->id);
+            $query = Loan::with(['customer', 'user'])->where('business_id', $request->user()->business_id);
 
             // Apply filters if provided
             if ($request->has('status') && $request->status !== 'all') {
@@ -126,14 +132,14 @@ class DocumentController extends Controller
     }
 
     /**
-     * Export borrowers to Excel
+     * Export customers to Excel
      */
-    public function exportBorrowers(Request $request)
+    public function exportCustomers(Request $request)
     {
         try {
-            $borrowers = Borrower::where('user_id', $request->user()->id)->get();
+            $customers = Customer::where('business_id', $request->user()->business_id)->get();
 
-            $filepath = $this->excelService->exportBorrowers($borrowers);
+            $filepath = $this->excelService->exportCustomers($customers);
 
             return Response::download($filepath, basename($filepath), [
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -142,7 +148,7 @@ class DocumentController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to export borrowers: ' . $e->getMessage()
+                'message' => 'Failed to export customers: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -153,7 +159,7 @@ class DocumentController extends Controller
     public function exportTransactions(Request $request)
     {
         try {
-            $query = Transaction::where('user_id', $request->user()->id);
+            $query = Transaction::where('business_id', $request->user()->business_id);
 
             // Apply filters if provided
             if ($request->has('type') && $request->type !== 'all') {
@@ -190,9 +196,9 @@ class DocumentController extends Controller
     public function exportPayments(Request $request)
     {
         try {
-            $query = LoanPayment::with(['loan.borrower'])
+            $query = LoanPayment::with(['loan.customer'])
                 ->whereHas('loan', function ($q) use ($request) {
-                    $q->where('user_id', $request->user()->id);
+                    $q->where('business_id', $request->user()->business_id);
                 });
 
             // Apply filters if provided
@@ -226,7 +232,7 @@ class DocumentController extends Controller
     public function generateLoanAgreement(Request $request, $loanId)
     {
         try {
-            $loan = Loan::where('user_id', $request->user()->id)
+            $loan = Loan::where('business_id', $request->user()->business_id)
                 ->where('id', $loanId)
                 ->firstOrFail();
 

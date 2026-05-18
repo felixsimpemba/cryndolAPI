@@ -2,28 +2,13 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
 
-class Business extends Model
-{
-    use HasFactory;
-
-    protected $table = 'blms_businesses';
-    public $incrementing = false;
-    protected $keyType = 'string';
-
-    protected $fillable = [
-        'id','business_name','registration_number','email','phone','address','city','country','industry','is_active'
-    ];
-
-    protected static function booted()
-    {
-        static::creating(function ($model) {
-            if (!$model->id) { $model->id = (string) Str::uuid(); }
-        });
-    }
-
-    public function users() { return $this->hasMany(User::class); }
+class Business extends Model { 
+    use HasUuids; 
+    protected $guarded = []; 
+    public function users() { return $this->hasMany(User::class); } 
+    public function customers() { return $this->hasMany(Customer::class); } 
+    public function loans() { return $this->hasMany(Loan::class); } 
 }

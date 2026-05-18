@@ -3,254 +3,222 @@
 namespace App\Http\Controllers;
 
 use App\Models\Loan;
-use App\Models\Borrower;
+use App\Models\Customer;
 use App\Models\LoanPayment;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use App\Http\Requests\LoanStoreRequest;
 use App\Http\Requests\LoanUpdateRequest;
 use App\Http\Requests\LoanStatusRequest;
 use App\Http\Requests\LoanPaymentRequest;
-use App\Mail\LoanApprovedMail;
-use App\Mail\PaymentReminderMail;
-use App\Mail\PaymentReceivedMail;
-use App\Mail\LoanClosedMail;
 use OpenApi\Attributes as OA;
 
 class LoansController extends Controller
 {
+    private function authorizeAction(Request $request, string $permission)
+    {
+        $user = $request->user();
+        if (!$user->hasPermission($permission)) {
+            abort(response()->json([
+                'success' => false, 
+                'message' => "Unauthorized. You do not have permission to {$permission}."
+            ], 403));
+        }
+    }
+
     #[OA\Get(path: '/loans', summary: 'List loans', tags: ['Loans'], security: [['bearerAuth' => []]], responses: [new OA\Response(response: 200, description: 'OK')])]
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
         $q = Loan::query()
-            ->where('user_id', $user->id)
-            ->with(['borrower', 'collateral'])
-            ->withSum('payments as totalPaid', 'amountPaid');
+            ->where('business_id', $user->business_id)
+            ->with(['customer', 'collaterals']);
 
         if ($status = $request->query('status')) {
             $q->where('status', $status);
         }
-        $loans = $q->orderByDesc('id')->paginate($request->query('per_page', 15));
+        
+        $loans = $q->orderByDesc('created_at')->paginate($request->query('per_page', 15));
         return response()->json(['success' => true, 'data' => $loans]);
     }
 
     #[OA\Post(path: '/loans', summary: 'Create loan', tags: ['Loans'], security: [['bearerAuth' => []]], responses: [new OA\Response(response: 201, description: 'Created'), new OA\Response(response: 422, description: 'Validation error')])]
-    public function store(LoanStoreRequest $request): JsonResponse
+    public function store(LoanStoreRequest $request, \App\Services\LoanCalculationService $calculator): JsonResponse
     {
+        $this->authorizeAction($request, 'loans.create');
         $user = $request->user();
         $data = $request->validated();
-        // Ensure borrower belongs to this user
-        Borrower::where('user_id', $user->id)->findOrFail($data['borrower_id']);
-        $data['user_id'] = $user->id;
-        $loan = DB::transaction(function () use ($data, $user, $request) {
-            $loan = Loan::create($data);
+        
+        // Ensure customer belongs to this business
+        Customer::where('business_id', $user->business_id)->findOrFail($data['customer_id']);
+        
+        $data['business_id']     = $user->business_id;
+        $data['loan_officer_id'] = $user->id;
+        $data['loan_number']     = 'LN-' . strtoupper(uniqid());
+        
+        if (!isset($data['branch_id'])) {
+            $data['branch_id'] = $user->branch_id;
+        }
 
-            // Handle collateral
-            if ($request->filled('collateral_name') || $request->hasFile('collateral_photos')) {
-                $photos = [];
-                if ($request->hasFile('collateral_photos')) {
-                    foreach ($request->file('collateral_photos') as $photo) {
-                        $photos[] = $photo->store('collaterals/' . $loan->id, 'public');
-                    }
+        // ── Resolve interest rate based on template type ──────────────────────
+        if (!empty($data['loan_template_id'])) {
+            $template = \App\Models\LoanTemplate::find($data['loan_template_id']);
+
+            if ($template && $template->template_type === 'flat_rate') {
+                $ratePeriod = $data['rate_period'] ?? 'month';
+                $periodRate = $template->getRateForPeriod($ratePeriod);
+                if ($periodRate !== null) {
+                    $data['interest_rate'] = $periodRate;
                 }
-
-                $loan->collateral()->create([
-                    'name' => $request->input('collateral_name', 'Unnamed Collateral'),
-                    'description' => $request->input('collateral_description'),
-                    'photos' => $photos,
-                ]);
+                $data['interest_type'] = 'FLAT';
+            } elseif ($template && $template->template_type === 'smart_loan') {
+                $data['interest_type'] = 'REDUCING';
+                $data['term_unit']     = 'months';
             }
-            return $loan;
-        });
+        }
 
-        return response()->json(['success' => true, 'message' => 'Loan created', 'data' => $loan->load('collateral')], 201);
+        $loan = Loan::create($data);
+        
+        // Load the template so the calculator can route to the right schedule logic
+        $loan->load('loanTemplate');
+
+        $schedules = $calculator->generateRepaymentSchedule($loan, $data['start_date']);
+        foreach ($schedules as $sched) {
+            $sched['business_id'] = $loan->business_id;
+            $loan->schedules()->create($sched);
+        }
+
+        $loan->load(['customer', 'collaterals', 'loanTemplate', 'schedules']);
+
+        return response()->json(['success' => true, 'message' => 'Loan created', 'data' => $loan], 201);
     }
 
     #[OA\Get(path: '/loans/{id}', summary: 'Get loan details', tags: ['Loans'], security: [['bearerAuth' => []]], responses: [new OA\Response(response: 200, description: 'OK'), new OA\Response(response: 404, description: 'Not found')])]
     public function show(Request $request, $id): JsonResponse
     {
         $user = $request->user();
-        $loan = Loan::where('user_id', $user->id)->with(['borrower', 'payments', 'collateral'])->findOrFail($id);
-        // aggregate totals
-        $totalPaid = $loan->payments()->sum('amountPaid');
-        $totalDue = (float) $loan->principal + ((float) $loan->principal * (float) $loan->interestRate / 100.0);
-        $balance = $totalDue - (float) $totalPaid;
+        $loan = Loan::where('business_id', $user->business_id)
+            ->with(['customer', 'payments', 'collaterals', 'loanTemplate', 'schedules'])
+            ->findOrFail($id);
+            
         return response()->json([
             'success' => true,
-            'data' => [
-                'loan' => $loan,
-                'aggregates' => [
-                    'totalPaid' => (float) $totalPaid,
-                    'totalDue' => (float) $totalDue,
-                    'balance' => (float) $balance,
-                ]
-            ]
+            'data' => $loan
         ]);
     }
 
     #[OA\Put(path: '/loans/{id}', summary: 'Update loan', tags: ['Loans'], security: [['bearerAuth' => []]], responses: [new OA\Response(response: 200, description: 'OK'), new OA\Response(response: 404, description: 'Not found'), new OA\Response(response: 422, description: 'Validation error')])]
     public function update(LoanUpdateRequest $request, $id): JsonResponse
     {
+        $this->authorizeAction($request, 'loans.edit');
         $user = $request->user();
-        $loan = Loan::where('user_id', $user->id)->findOrFail($id);
+        $loan = Loan::where('business_id', $user->business_id)->findOrFail($id);
         $data = $request->validated();
-        DB::transaction(function () use ($loan, $data, $request) {
-            $loan->update($data);
+        
+        $loan->update($data);
 
-            // Handle collateral update
-            if ($request->filled('collateral_name') || $request->hasFile('collateral_photos')) {
-                $collateral = $loan->collateral ?: new \App\Models\Collateral(['loan_id' => $loan->id]);
-                
-                if ($request->filled('collateral_name')) {
-                    $collateral->name = $request->input('collateral_name');
-                }
-                
-                if ($request->has('collateral_description')) {
-                    $collateral->description = $request->input('collateral_description');
-                }
+        return response()->json(['success' => true, 'message' => 'Loan updated', 'data' => $loan]);
+    }
 
-                if ($request->hasFile('collateral_photos')) {
-                    $photos = $collateral->photos ?: [];
-                    foreach ($request->file('collateral_photos') as $photo) {
-                        $photos[] = $photo->store('collaterals/' . $loan->id, 'public');
-                    }
-                    $collateral->photos = $photos;
-                }
+    #[OA\Post(path: '/loans/{id}/status', summary: 'Change loan status', tags: ['Loans'], security: [['bearerAuth' => []]])]
+    public function changeStatus(Request $request, $id, \App\Services\DisbursementService $disbursementService): JsonResponse
+    {
+        $this->authorizeAction($request, 'loans.approve');
+        $user = $request->user();
+        $loan = Loan::where('business_id', $user->business_id)->findOrFail($id);
+        
+        $request->validate([
+            'status' => 'required|string|in:PENDING,APPROVED,ACTIVE,PAID,DEFAULTED,CANCELLED,pending,approved,active,paid,defaulted,cancelled'
+        ]);
 
-                $collateral->save();
+        $newStatus = strtoupper($request->status);
+
+        // Validation: Cannot skip steps
+        if ($newStatus === 'ACTIVE' && $loan->status !== 'APPROVED') {
+            return response()->json(['success' => false, 'message' => 'Loan must be APPROVED before it can be activated/disbursed'], 400);
+        }
+
+        DB::transaction(function () use ($loan, $newStatus, $disbursementService) {
+            $loan->update(['status' => $newStatus]);
+
+            // If APPROVED, auto-create a disbursement entry
+            if ($newStatus === 'APPROVED') {
+                $disbursementService->createDisbursement($loan, [
+                    'amount' => $loan->principal_amount,
+                    'destination_account' => 'MANUAL',
+                    'provider' => 'MANUAL'
+                ]);
             }
         });
 
-        return response()->json(['success' => true, 'message' => 'Loan updated', 'data' => $loan->load('collateral')]);
+        return response()->json([
+            'success' => true,
+            'message' => "Loan status updated to {$newStatus}",
+            'data' => $loan->load('customer')
+        ]);
     }
 
     #[OA\Delete(path: '/loans/{id}', summary: 'Delete loan', tags: ['Loans'], security: [['bearerAuth' => []]], responses: [new OA\Response(response: 200, description: 'OK'), new OA\Response(response: 404, description: 'Not found')])]
     public function destroy(Request $request, $id): JsonResponse
     {
+        $this->authorizeAction($request, 'loans.delete');
         $user = $request->user();
-        $loan = Loan::where('user_id', $user->id)->findOrFail($id);
+        $loan = Loan::where('business_id', $user->business_id)->findOrFail($id);
         $loan->delete();
         return response()->json(['success' => true, 'message' => 'Loan deleted']);
     }
 
-    #[OA\Post(path: '/loans/{id}/status', summary: 'Change loan status', tags: ['Loans'], security: [['bearerAuth' => []]], responses: [new OA\Response(response: 200, description: 'OK'), new OA\Response(response: 404, description: 'Not found'), new OA\Response(response: 422, description: 'Unprocessable Entity')])]
-    protected $workflowService;
-    protected $repaymentService;
-
-    public function __construct(\App\Services\WorkflowService $workflowService, \App\Services\RepaymentService $repaymentService)
+    #[OA\Post(path: '/loans/{id}/payments', summary: 'Add a manual payment', tags: ['Loans', 'Payments'], security: [['bearerAuth' => []]])]
+    public function addPayment(Request $request, $id, \App\Services\LoanCalculationService $calculator): JsonResponse
     {
-        $this->workflowService = $workflowService;
-        $this->repaymentService = $repaymentService;
-    }
-
-    public function changeStatus(LoanStatusRequest $request, $id): JsonResponse
-    {
+        $this->authorizeAction($request, 'loans.edit');
         $user = $request->user();
-        $loan = Loan::where('user_id', $user->id)->with(['borrower', 'user'])->findOrFail($id);
-        $data = $request->validated();
-        $status = strtolower($data['status']);
-        $comments = $request->input('comments');
-        $sendEmail = $request->input('sendEmail', false);
+        $loan = Loan::where('business_id', $user->business_id)->with('loanTemplate')->findOrFail($id);
+        
+        $data = $request->validate([
+            'amount_paid' => 'required|numeric|min:0.01',
+            'payment_date' => 'required|date',
+            'payment_method' => 'required|string',
+            'reference_number' => 'nullable|string',
+            'notes' => 'nullable|string'
+        ]);
 
-        try {
-            switch ($status) {
-                case 'approved':
-                    $this->workflowService->approveApplication($loan, $user, $comments);
-                    // Send approval email if requested and borrower has email
-                    if ($sendEmail && $loan->borrower && $loan->borrower->email) {
-                        Mail::to($loan->borrower->email)->send(new LoanApprovedMail($loan));
-                    }
-                    break;
-                case 'rejected':
-                    $this->workflowService->rejectApplication($loan, $user, $comments);
-                    break;
-                case 'active': // Disbursed
-                    $this->workflowService->disburseLoan($loan, $user, $comments);
-                    break;
-                case 'closed':
-                    // Fallback for simple transitions
-                    $action = 'update_status';
-                    $this->workflowService->transition($loan, $user, $action, $status, $comments);
-                    // Send closure email if requested and borrower has email
-                    if ($sendEmail && $loan->borrower && $loan->borrower->email) {
-                        Mail::to($loan->borrower->email)->send(new LoanClosedMail($loan));
-                    }
-                    break;
-                default:
-                    // Fallback for simple transitions like 'cancelled', 'paid', 'defaulted'
-                    $action = 'update_status';
-                    // transition($loan, $user, $action, $toStatus, $comments)
-                    $this->workflowService->transition($loan, $user, $action, $status, $comments);
-                    break;
-            }
-            return response()->json(['success' => true, 'message' => "Loan status updated to $status", 'data' => $loan]);
-        } catch (\Exception $e) {
-            return $this->logAndResponseError($e, $e->getMessage(), 422);
-        }
-    }
+        // Calculate remaining balance
+        $totalRepayable = $calculator->calculateTotalRepayment($loan);
+        $totalPaidBefore = (float) $loan->payments()->sum('amount_paid');
+        $remainingBalance = round($totalRepayable - $totalPaidBefore, 2);
 
-    #[OA\Post(path: '/loans/{id}/payments', summary: 'Record payment for a loan', tags: ['Loan Payments'], security: [['bearerAuth' => []]], responses: [new OA\Response(response: 201, description: 'Created'), new OA\Response(response: 404, description: 'Not found'), new OA\Response(response: 422, description: 'Validation error')])]
-    public function addPayment(LoanPaymentRequest $request, $id): JsonResponse
-    {
-        $user = $request->user();
-        $loan = Loan::where('user_id', $user->id)->with(['borrower', 'user'])->findOrFail($id);
-        $data = $request->validated();
-        $sendEmail = $request->input('sendEmail', false);
-
-        try {
-            $payment = $this->repaymentService->recordPayment($loan, $data);
-
-            // Calculate balance after payment
-            $totalPaid = $loan->payments()->sum('amountPaid');
-            $totalDue = (float) $loan->principal + ((float) $loan->principal * (float) $loan->interestRate / 100.0);
-            $balance = $totalDue - (float) $totalPaid;
-
-            // Send payment confirmation email if requested and borrower has email
-            if ($sendEmail && $loan->borrower && $loan->borrower->email) {
-                Mail::to($loan->borrower->email)->send(new PaymentReceivedMail(
-                    $loan,
-                    $data['amountPaid'],
-                    $data['paidDate'],
-                    $balance
-                ));
-            }
-
-            return response()->json(['success' => true, 'message' => 'Payment recorded', 'data' => $payment], 201);
-        } catch (\Exception $e) {
-            return $this->logAndResponseError($e, $e->getMessage(), 500);
-        }
-    }
-
-    /**
-     * Send payment reminder email to borrower
-     */
-    #[OA\Post(path: '/loans/{id}/send-reminder', summary: 'Send payment reminder email', tags: ['Loans'], security: [['bearerAuth' => []]], responses: [new OA\Response(response: 200, description: 'OK'), new OA\Response(response: 404, description: 'Not found'), new OA\Response(response: 422, description: 'Validation error')])]
-    public function sendReminderEmail(Request $request, $id): JsonResponse
-    {
-        $user = $request->user();
-        $loan = Loan::where('user_id', $user->id)->with(['borrower', 'user'])->findOrFail($id);
-
-        // Check if borrower has an email
-        if (!$loan->borrower || !$loan->borrower->email) {
+        if ((float)$data['amount_paid'] > ($remainingBalance + 0.01)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Borrower does not have an email address'
+                'message' => "Payment amount exceeds the remaining balance. Maximum allowed is " . number_format($remainingBalance, 2),
+                'remaining_balance' => $remainingBalance
             ], 422);
         }
 
-        // Calculate balance
-        $totalPaid = $loan->payments()->sum('amountPaid');
-        $totalDue = (float) $loan->principal + ((float) $loan->principal * (float) $loan->interestRate / 100.0);
-        $balance = $totalDue - (float) $totalPaid;
+        $payment = LoanPayment::create([
+            'business_id' => $user->business_id,
+            'loan_id' => $loan->id,
+            'payment_date' => $data['payment_date'],
+            'amount_paid' => $data['amount_paid'],
+            'payment_method' => $data['payment_method'],
+            'reference_number' => $data['reference_number'],
+            'notes' => $data['notes'],
+            'recorded_by' => $user->id
+        ]);
 
-        try {
-            Mail::to($loan->borrower->email)->send(new PaymentReminderMail($loan, $balance));
-            return response()->json(['success' => true, 'message' => 'Reminder email sent successfully']);
-        } catch (\Exception $e) {
-            return $this->logAndResponseError($e, 'Failed to send reminder email', 500);
+        $totalPaidAfter = (float) $loan->payments()->sum('amount_paid');
+        
+        // Auto-close loan if the remaining balance is fulfilled (with 1 cent rounding buffer)
+        if ($totalPaidAfter >= ($totalRepayable - 0.01)) {
+            $loan->update(['status' => 'PAID']);
         }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment recorded successfully',
+            'data' => $payment
+        ], 201);
     }
 }

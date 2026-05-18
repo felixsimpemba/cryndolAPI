@@ -12,11 +12,21 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->alias([
+            'role' => \App\Http\Middleware\CheckRole::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (Throwable $e, $request) {
             if ($request->is('api/*')) {
+                // Handle AuthenticationException specifically - return 401
+                if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthenticated.',
+                    ], 401);
+                }
+
                 // Extract basic info without exposing sensitive details
                 $statusCode = method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500;
 

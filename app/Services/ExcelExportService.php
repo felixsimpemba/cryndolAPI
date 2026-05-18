@@ -25,7 +25,7 @@ class ExcelExportService
         $this->styleHeader($sheet, 'A1');
 
         // Set column headers
-        $headers = ['Loan ID', 'Borrower Name', 'Principal', 'Interest Rate', 'Term', 'Start Date', 'Due Date', 'Status', 'Total Paid'];
+        $headers = ['Loan ID', 'Customer Name', 'Principal', 'Interest Rate', 'Term', 'Start Date', 'Due Date', 'Status', 'Total Paid'];
         $column = 'A';
         foreach ($headers as $header) {
             $sheet->setCellValue($column . '3', $header);
@@ -37,7 +37,7 @@ class ExcelExportService
         $row = 4;
         foreach ($loans as $loan) {
             $sheet->setCellValue('A' . $row, $loan->id);
-            $sheet->setCellValue('B' . $row, $loan->borrower->fullName ?? 'N/A');
+            $sheet->setCellValue('B' . $row, $loan->customer->first_name ?? 'N/A');
             $sheet->setCellValue('C' . $row, 'K ' . number_format($loan->principal, 2));
             $sheet->setCellValue('D' . $row, $loan->interestRate . '%');
             $sheet->setCellValue('E' . $row, $loan->termMonths . ' ' . ($loan->term_unit ?? 'months'));
@@ -57,15 +57,15 @@ class ExcelExportService
     }
 
     /**
-     * Export borrowers to Excel
+     * Export customers to Excel
      */
-    public function exportBorrowers($borrowers)
+    public function exportCustomers($customers)
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
         // Set title
-        $sheet->setCellValue('A1', 'Borrowers Export - ' . now()->format('Y-m-d H:i'));
+        $sheet->setCellValue('A1', 'Customers Export - ' . now()->format('Y-m-d H:i'));
         $sheet->mergeCells('A1:J1');
         $this->styleHeader($sheet, 'A1');
 
@@ -80,17 +80,17 @@ class ExcelExportService
 
         // Add data
         $row = 4;
-        foreach ($borrowers as $borrower) {
-            $sheet->setCellValue('A' . $row, $borrower->id);
-            $sheet->setCellValue('B' . $row, $borrower->fullName);
-            $sheet->setCellValue('C' . $row, $borrower->email ?? 'N/A');
-            $sheet->setCellValue('D' . $row, $borrower->phoneNumber ?? 'N/A');
-            $sheet->setCellValue('E' . $row, $borrower->nrc_number ?? 'N/A');
-            $sheet->setCellValue('F' . $row, $borrower->address ?? 'N/A');
-            $sheet->setCellValue('G' . $row, $borrower->date_of_birth ? $borrower->date_of_birth->format('Y-m-d') : 'N/A');
-            $sheet->setCellValue('H' . $row, ucfirst($borrower->gender ?? 'N/A'));
-            $sheet->setCellValue('I' . $row, ucfirst($borrower->employment_status ?? 'N/A'));
-            $sheet->setCellValue('J' . $row, $borrower->monthly_income ? 'K ' . number_format($borrower->monthly_income, 2) : 'N/A');
+        foreach ($customers as $customer) {
+            $sheet->setCellValue('A' . $row, $customer->id);
+            $sheet->setCellValue('B' . $row, $customer->first_name);
+            $sheet->setCellValue('C' . $row, $customer->email ?? 'N/A');
+            $sheet->setCellValue('D' . $row, $customer->phoneNumber ?? 'N/A');
+            $sheet->setCellValue('E' . $row, $customer->nrc_number ?? 'N/A');
+            $sheet->setCellValue('F' . $row, $customer->address ?? 'N/A');
+            $sheet->setCellValue('G' . $row, $customer->date_of_birth ? $customer->date_of_birth->format('Y-m-d') : 'N/A');
+            $sheet->setCellValue('H' . $row, ucfirst($customer->gender ?? 'N/A'));
+            $sheet->setCellValue('I' . $row, ucfirst($customer->employment_status ?? 'N/A'));
+            $sheet->setCellValue('J' . $row, $customer->monthly_income ? 'K ' . number_format($customer->monthly_income, 2) : 'N/A');
             $row++;
         }
 
@@ -99,7 +99,7 @@ class ExcelExportService
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
-        return $this->outputSpreadsheet($spreadsheet, 'borrowers_export_' . now()->format('Y-m-d') . '.xlsx');
+        return $this->outputSpreadsheet($spreadsheet, 'customers_export_' . now()->format('Y-m-d') . '.xlsx');
     }
 
     /**
@@ -158,7 +158,7 @@ class ExcelExportService
         $this->styleHeader($sheet, 'A1');
 
         // Set column headers
-        $headers = ['Payment ID', 'Loan ID', 'Borrower', 'Amount', 'Payment Date', 'Notes'];
+        $headers = ['Payment ID', 'Loan ID', 'Customer', 'Amount', 'Payment Date', 'Notes'];
         $column = 'A';
         foreach ($headers as $header) {
             $sheet->setCellValue($column . '3', $header);
@@ -171,7 +171,7 @@ class ExcelExportService
         foreach ($payments as $payment) {
             $sheet->setCellValue('A' . $row, $payment->id);
             $sheet->setCellValue('B' . $row, $payment->loan_id);
-            $sheet->setCellValue('C' . $row, $payment->loan->borrower->fullName ?? 'N/A');
+            $sheet->setCellValue('C' . $row, $payment->loan->customer->first_name ?? 'N/A');
             $sheet->setCellValue('D' . $row, 'K ' . number_format($payment->amount, 2));
             $sheet->setCellValue('E' . $row, $payment->paymentDate ? $payment->paymentDate->format('Y-m-d') : 'N/A');
             $sheet->setCellValue('F' . $row, $payment->notes ?? 'N/A');

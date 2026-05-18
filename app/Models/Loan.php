@@ -2,84 +2,38 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
-class Loan extends Model
-{
-	use HasFactory;
+class Loan extends Model { 
+    use HasUuids; 
+    protected $guarded = []; 
+    protected $appends = ['total_paid', 'borrower_name'];
 
-	protected $fillable = [
-		'loan_product_id',
-		'user_id',
-		'borrower_id',
-		'principal',
-		'interestRate',
-		'termMonths',
-		'term_unit', // Added
-		'startDate',
-		'status',
-		'totalPaid',
-	];
+    public function getTotalPaidAttribute()
+    {
+        return $this->payments()->sum('amount_paid');
+    }
 
-	protected $appends = ['dueDate'];
+    public function getBorrowerNameAttribute()
+    {
+        try {
+            // Must check if relationship is loaded, otherwise it returns null
+            if (!$this->relationLoaded('customer')) {
+                return 'N/A';
+            }
+            $customer = $this->customer;
+            return $customer ? trim($customer->first_name . ' ' . $customer->last_name) : 'N/A';
+        } catch (\Exception $e) {
+            return 'N/A';
+        }
+    }
 
-	protected function casts(): array
-	{
-		return [
-			'principal' => 'decimal:2',
-			'interestRate' => 'decimal:2',
-			'startDate' => 'date',
-			'totalPaid' => 'decimal:2',
-		];
-	}
-
-	public function getDueDateAttribute()
-	{
-		if (!$this->startDate)
-			return null;
-
-		$date = \Illuminate\Support\Carbon::parse($this->startDate);
-		$term = (int) $this->termMonths; // This column represents the duration value
-		$unit = $this->term_unit ?? 'months'; // Default to months
-
-		switch ($unit) {
-			case 'days':
-				return $date->addDays($term);
-			case 'weeks':
-				return $date->addWeeks($term);
-			case 'years':
-				return $date->addYears($term);
-			case 'months':
-			default:
-				return $date->addMonths($term);
-		}
-	}
-
-	public function user()
-	{
-		return $this->belongsTo(User::class);
-	}
-
-	public function borrower()
-	{
-		return $this->belongsTo(Borrower::class);
-	}
-
-	public function payments()
-	{
-		return $this->hasMany(LoanPayment::class);
-	}
-
-	public function loanProduct()
-	{
-		return $this->belongsTo(LoanProduct::class);
-	}
-
-	public function collateral()
-	{
-		return $this->hasOne(Collateral::class);
-	}
+    public function customer() { return $this->belongsTo(Customer::class); }
+    public function borrower() { return $this->customer(); }
+    public function payments() { return $this->hasMany(LoanPayment::class); } 
+    public function schedules() { return $this->hasMany(LoanSchedule::class); }
+    public function loanTemplate() { return $this->belongsTo(LoanTemplate::class); }
+    public function business() { return $this->belongsTo(Business::class); }
+    public function collaterals() { return $this->belongsToMany(Collateral::class, 'loan_collaterals')->withPivot('collateral_status', 'valuation_date', 'appraised_value', 'notes'); } 
 }
-
-

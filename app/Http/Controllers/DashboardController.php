@@ -5,208 +5,100 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
-use App\Models\Borrower;
+use App\Models\Customer;
 use App\Models\Loan;
 use App\Models\LoanPayment;
-use App\Models\Transaction;
+use App\Models\LoanSchedule;
+use App\Models\Account;
+use App\Models\JournalEntry;
 use OpenApi\Attributes as OA;
 
 class DashboardController extends Controller
 {
-	/**
-	 * @OA\Get(
-	 *     path="/dashboard/summary/{businessId}",
-	 *     operationId="getDashboardSummary",
-	 *     summary="Get dashboard summary metrics",
-	 *     description="Returns aggregated stats and profit trend for the authenticated business",
-	 *     tags={"Dashboard"},
-	 *     security={{"bearerAuth": {}}},
-	 *     @OA\Parameter(
-	 *         name="businessId",
-	 *         in="path",
-	 *         required=true,
-	 *         description="Business identifier",
-	 *         @OA\Schema(type="string")
-	 *     ),
-	 *     @OA\Response(
-	 *         response=200,
-	 *         description="Dashboard summary"
-	 *     ),
-	 *     @OA\Response(
-	 *         response=401,
-	 *         description="Unauthorized",
-	 *         @OA\JsonContent(ref="#/components/schemas/ErrorResponse")
-	 *     )
-	 * )
-	 */
 	public function summary(Request $request, $businessId)
 	{
-		$user = $request->user();
+		try {
+			$user = $request->user();
+			$bId = $user->business_id;
 
-		// 1. Working Capital
-		$workingCapital = (float) $user->working_capital;
+			if (!$bId) {
+				return response()->json([
+					'coreMetrics' => [
+						'totalCapitalInvested' => 0,
+						'currentBalance' => 0,
+						'realizedProfit' => 0,
+						'totalActiveLoanAmount' => 0,
+						'numberOfCustomers' => 0,
+						'customersWithActiveDebt' => 0,
+						'loansDueNext7Days' => ['count' => 0, 'amount' => 0],
+						'loanStatusCounts' => ['active' => 0, 'closed' => 0, 'defaulted' => 0]
+					],
+					'growthMetrics' => [
+						'monthlyRevenue' => 0,
+						'monthlyProfit' => 0,
+						'revenueGrowthRate' => 0,
+						'customerGrowthRate' => 0,
+						'revenueTrend' => []
+					]
+				]);
+			}
 
-		// 2. Expenses (Operational costs only - no disbursements)
-		$expenses = Transaction::where('user_id', $user->id)
-			->where('type', 'outflow')
-			->whereNotIn('category', ['disbursement', 'capital_withdrawal'])
-			->sum('amount');
+			// 1. Core Accounting Metrics
+			$totalCapitalInvested = (float) Account::where('business_id', $bId)->where('type', 'EQUITY')->sum('balance');
+			$currentBalance = (float) Account::where('business_id', $bId)->where('code', '1010')->value('balance');
+			
+			$totalRevenue = (float) Account::where('business_id', $bId)->where('type', 'REVENUE')->sum('balance');
+			$totalExpenses = (float) Account::where('business_id', $bId)->where('type', 'EXPENSE')->sum('balance');
+			$realizedProfit = $totalRevenue - $totalExpenses;
 
-		// 3. Money Collected (Principal + Interest)
-		// We need to split this for the formula.
-		$collectionStats = LoanPayment::whereHas('loan', function ($q) use ($user) {
-			$q->where('user_id', $user->id);
-		})->where('status', 'paid')
-			->selectRaw('sum(principal_portion) as total_principal, sum(interest_portion) as total_interest')
-			->first();
+			$totalActiveLoanAmount = (float) Loan::where('business_id', $bId)
+				->where('status', 'ACTIVE')
+				->sum('principal_amount');
 
-		$principalCollected = (float) ($collectionStats->total_principal ?? 0);
-		$interestCollected = (float) ($collectionStats->total_interest ?? 0);
-		$moneyCollected = $principalCollected + $interestCollected;
+			$numberOfCustomers = Customer::where('business_id', $bId)->count();
+			$customersWithActiveDebt = Loan::where('business_id', $bId)->where('status', 'ACTIVE')->distinct('customer_id')->count();
 
-		// 4. Losses from Defaulted Loans (Unpaid Principal + Unpaid Interest)
-		$defaultedLoans = Loan::where('user_id', $user->id)
-			->where('status', 'defaulted')
-			->with(['payments']) // Eager load payments to sum portions
-			->get();
+			// Upcoming receivables (7 days)
+			$next7Days = Carbon::now()->addDays(7)->toDateString();
+			$dueNext7Count = LoanSchedule::where('business_id', $bId)
+				->whereBetween('due_date', [Carbon::now()->toDateString(), $next7Days])
+				->whereIn('status', ['PENDING', 'PARTIAL', 'OVERDUE'])
+				->count();
+			
+			$dueNext7Amount = (float) LoanSchedule::where('business_id', $bId)
+				->whereBetween('due_date', [Carbon::now()->toDateString(), $next7Days])
+				->whereIn('status', ['PENDING', 'PARTIAL', 'OVERDUE'])
+				->selectRaw('SUM(principal_amount + interest_amount + fee_amount + penalty_amount) as total')
+				->value('total');
 
-		$lossesFromDefaults = 0;
-		foreach ($defaultedLoans as $loan) {
-			$loanPrincipal = (float) $loan->principal;
-			$loanExpectedInterest = $loanPrincipal * ((float) $loan->interestRate / 100.0);
-
-			// Re-calculate what was paid on this specific loan
-			// Note: we can't just use loan->totalPaid if it's not split, but our RepaymentService now splits it.
-			// Using logic from RepaymentService to be safe or summing relation.
-			$paidPrincipal = $loan->payments->sum('principal_portion');
-			$paidInterest = $loan->payments->sum('interest_portion');
-
-			$outstandingPrincipal = max(0, $loanPrincipal - $paidPrincipal);
-			$outstandingInterest = max(0, $loanExpectedInterest - $paidInterest);
-
-			$lossesFromDefaults += ($outstandingPrincipal + $outstandingInterest);
+			return response()->json([
+				'coreMetrics' => [
+					'totalCapitalInvested' => round($totalCapitalInvested, 2),
+					'currentBalance' => round($currentBalance, 2),
+					'realizedProfit' => round($realizedProfit, 2),
+					'totalActiveLoanAmount' => round($totalActiveLoanAmount, 2),
+					'numberOfCustomers' => $numberOfCustomers,
+					'customersWithActiveDebt' => $customersWithActiveDebt,
+					'loansDueNext7Days' => [
+						'count' => (int) $dueNext7Count,
+						'amount' => round($dueNext7Amount, 2)
+					],
+					'loanStatusCounts' => [
+						'active' => Loan::where('business_id', $bId)->where('status', 'ACTIVE')->count(),
+						'closed' => Loan::where('business_id', $bId)->where('status', 'PAID')->count(),
+						'defaulted' => Loan::where('business_id', $bId)->where('status', 'DEFAULTED')->count()
+					]
+				],
+				'growthMetrics' => [
+					'monthlyRevenue' => 0,
+					'monthlyProfit' => 0,
+					'revenueGrowthRate' => 0,
+					'customerGrowthRate' => 0,
+					'revenueTrend' => []
+				]
+			]);
+		} catch (\Exception $e) {
+			return $this->logAndResponseError($e, 'Failed to retrieve dashboard data');
 		}
-
-		// 5. Profit Made (REALIZED PROFIT)
-		// Formula: Total Interest Collected - Total Expenses - Losses
-		$profitMade = $interestCollected - $expenses - $lossesFromDefaults;
-
-		// 6. Estimated Profit (UNREALIZED PROFIT)
-		// Formula: Expected Interest from Active Loans - Expected Defaults - Expected Expenses
-		// "must NOT include already collected interest."
-		$activeLoans = Loan::where('user_id', $user->id)
-			->where('status', 'active')
-			->with(['payments'])
-			->get();
-
-		$unrealizedProfit = 0;
-		foreach ($activeLoans as $loan) {
-			$totalExpectedInterest = (float) $loan->principal * ((float) $loan->interestRate / 100.0);
-			$paidInterest = $loan->payments->sum('interest_portion');
-			$remainingInterest = max(0, $totalExpectedInterest - $paidInterest);
-			$unrealizedProfit += $remainingInterest;
-		}
-		// Subtract Expected Defaults/Expenses if we had a prediction model. For now, 0.
-		$estimatedProfit = $unrealizedProfit;
-
-		// 7. Current Balance (Available Cash)
-		// Formula: Working Capital - Total Loans Disbursed + Principal Collected + Interest Collected - Expenses
-		$totalLoansDisbursed = Transaction::where('user_id', $user->id)
-			->where('category', 'disbursement')
-			->sum('amount');
-
-		$currentBalance = $workingCapital - $totalLoansDisbursed + $principalCollected + $interestCollected - $expenses;
-
-
-		// 8. Business Value (Money in Business)
-		// Formula: Working Capital + Profit Made
-		$moneyInBusiness = $workingCapital + $profitMade;
-
-		// Extra Metrics for UI
-		$totalBorrowers = Borrower::where('user_id', $user->id)->count();
-		$totalLoans = Loan::where('user_id', $user->id)->count();
-		$totalOutstandingAmount = LoanPayment::whereHas('loan', function ($q) use ($user) {
-			$q->where('user_id', $user->id)->where('status', 'active');
-		})
-			->whereIn('status', ['scheduled', 'overdue'])
-			->sum(DB::raw('(amountScheduled - amountPaid)'));
-
-		$loansDueInNext7Days = LoanPayment::whereHas('loan', function ($q) use ($user) {
-			$q->where('user_id', $user->id)->where('status', 'active');
-		})
-			->whereBetween('scheduledDate', [Carbon::today(), Carbon::today()->addDays(7)])
-			->whereIn('status', ['scheduled', 'overdue'])
-			->count();
-
-		$overdueAmount = LoanPayment::whereHas('loan', function ($q) use ($user) {
-			$q->where('user_id', $user->id)->where('status', 'active');
-		})
-			->where('status', 'overdue')
-			->sum(DB::raw('(amountScheduled - amountPaid)'));
-
-		$dueThisWeekAmount = LoanPayment::whereHas('loan', function ($q) use ($user) {
-			$q->where('user_id', $user->id)->where('status', 'active');
-		})
-			->whereBetween('scheduledDate', [Carbon::today(), Carbon::today()->addDays(7)])
-			->sum(DB::raw('(amountScheduled - amountPaid)'));
-
-		$collectedToday = LoanPayment::whereHas('loan', function ($q) use ($user) {
-			$q->where('user_id', $user->id);
-		})
-			->whereDate('paidDate', Carbon::today())
-			->where('status', 'paid')
-			->sum('amountPaid');
-
-		$profitTrend = $this->calculateProfitTrend($user);
-
-		return response()->json([
-			'totalBorrowers' => $totalBorrowers,
-			'totalLoans' => $totalLoans,
-			'totalOutstandingAmount' => round((float) $totalOutstandingAmount, 2),
-			'totalPaidAmount' => round((float) $moneyCollected, 2),
-			'currentBalance' => round((float) $currentBalance, 2),
-			'loansDueInNext7Days' => $loansDueInNext7Days,
-			'overdueAmount' => round((float) $overdueAmount, 2),
-			'dueThisWeekAmount' => round((float) $dueThisWeekAmount, 2),
-			'collectedToday' => round((float) $collectedToday, 2),
-			'profitTrend' => $profitTrend,
-			'workingCapital' => round((float) $workingCapital, 2),
-			'estimatedProfit' => round((float) $estimatedProfit, 2), // Now purely Unrealized
-			'profitMade' => round((float) $profitMade, 2),
-			'moneyInBusiness' => round((float) $moneyInBusiness, 2),
-			'expenses' => round((float) $expenses, 2),
-			'losses' => round((float) $lossesFromDefaults, 2),
-		]);
-	}
-
-	private function calculateProfitTrend($user)
-	{
-		// Profit trend based on Interest Collected over time
-		$fromDate = Carbon::today()->subDays(29);
-		$payments = LoanPayment::whereHas('loan', function ($q) use ($user) {
-			$q->where('user_id', $user->id);
-		})
-			->where('status', 'paid')
-			->whereBetween('paidDate', [$fromDate->startOfDay(), Carbon::today()->endOfDay()])
-			->get(['paidDate', 'interest_portion']);
-
-		$daily = [];
-		for ($i = 0; $i < 30; $i++) {
-			$daily[Carbon::today()->subDays($i)->format('Y-m-d')] = 0.0;
-		}
-
-		foreach ($payments as $payment) {
-			$date = Carbon::parse($payment->paidDate)->format('Y-m-d');
-			$daily[$date] = ($daily[$date] ?? 0) + (float) $payment->interest_portion;
-		}
-
-		$profitTrend = [];
-		foreach (collect($daily)->sortKeys() as $date => $amount) {
-			$profitTrend[] = [
-				'date' => $date,
-				'amount' => round($amount, 2),
-			];
-		}
-		return $profitTrend;
 	}
 }

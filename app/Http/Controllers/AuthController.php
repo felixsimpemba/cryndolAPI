@@ -6,15 +6,16 @@ use App\Http\Requests\LoginRequest;
 use App\Http\Requests\RegisterPersonalRequest;
 use App\Http\Requests\RefreshTokenRequest;
 use App\Models\User;
+use App\Models\Business;
+use App\Models\Transaction; // I'll assume Transaction model exists for capital tracking
 use App\Services\TokenService;
-use Complex\Functions;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 use App\Mail\OtpVerificationMail;
 use Carbon\Carbon;
-use App\Models\Transaction;
+use Illuminate\Support\Str;
 use OpenApi\Attributes as OA;
 
 class AuthController extends Controller
@@ -26,14 +27,9 @@ class AuthController extends Controller
         $this->tokenService = $tokenService;
     }
 
-    /**
-     * Register Personal Profile
-     * POST /auth/register/personal
-     */
     #[OA\Post(
         path: '/auth/register/personal',
         summary: 'Register Personal Profile',
-        description: 'Creates a new user account with personal information',
         tags: ['Authentication'],
         requestBody: new OA\RequestBody(
             required: true,
@@ -50,38 +46,16 @@ class AuthController extends Controller
             )
         ),
         responses: [
-            new OA\Response(
-                response: 201,
-                description: 'Personal profile created successfully',
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: 'success', type: 'boolean', example: true),
-                        new OA\Property(property: 'message', type: 'string', example: 'Personal profile created successfully'),
-                        new OA\Property(
-                            property: 'data',
-                            properties: [
-                                new OA\Property(property: 'user', ref: '#/components/schemas/User'),
-                                new OA\Property(property: 'tokens', ref: '#/components/schemas/TokenPair')
-                            ]
-                        )
-                    ]
-                )
-            ),
-            new OA\Response(
-                response: 400,
-                description: 'Validation failed',
-                content: new OA\JsonContent(ref: '#/components/schemas/ValidationError')
-            )
+            new OA\Response(response: 201, description: 'Personal profile created successfully'),
+            new OA\Response(response: 422, description: 'Validation failed')
         ]
     )]
     public function registerPersonal(RegisterPersonalRequest $request): JsonResponse
     {
         try {
-            // Check if user exists
             $user = User::where('email', $request->email)->first();
 
             if ($user) {
-                // If user exists and is verified, deny registration
                 if ($user->email_verified_at) {
                     return response()->json([
                         'message' => 'The email has already been taken.',
@@ -89,8 +63,7 @@ class AuthController extends Controller
                     ], 422);
                 }
 
-                // If user exists but NOT verified, check if phone number is taken by ANOTHER user
-                $phoneExists = User::where('phoneNumber', $request->phoneNumber)
+                $phoneExists = User::where('phone', $request->phoneNumber)
                     ->where('id', '!=', $user->id)
                     ->exists();
 
@@ -101,43 +74,32 @@ class AuthController extends Controller
                     ], 422);
                 }
 
-                // Update existing unverified user
+                $businessId = $user->business_id;
+                if (!$businessId) {
+                    $business = Business::create([
+                        'name' => $request->fullName . ' Business',
+                        'email' => $request->email,
+                        'is_active' => true,
+                        'registration_number' => 'REG-' . strtoupper(Str::random(6)),
+                        'working_capital' => $request->working_capital ?? 0,
+                    ]);
+                    $businessId = $business->id;
+                }
+
                 $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
-                
+
                 $user->update([
-                    'fullName' => $request->fullName,
-                    'phoneNumber' => $request->phoneNumber,
-                    'password' => $request->password, // Will be hashed by cast
-                    'acceptTerms' => $request->acceptTerms,
+                    'full_name' => $request->fullName,
+                    'phone' => $request->phoneNumber,
+                    'password' => $request->password, 
                     'otp_code' => $otp,
                     'otp_expires_at' => Carbon::now()->addMinutes(10),
-                    'working_capital' => $request->working_capital ?? 0,
+                    'business_id' => $businessId,
+                    'role' => 'SUPER_ADMIN',
                 ]);
 
-                // Handle working capital transaction (remove old one if exists, add new one)
-                if ($request->filled('working_capital')) {
-                    // Remove old initial capital transaction
-                    Transaction::where('user_id', $user->id)
-                        ->where('category', 'capital_injection')
-                        ->where('description', 'Initial Working Capital')
-                        ->delete();
-
-                    if ($request->working_capital > 0) {
-                        Transaction::create([
-                            'user_id' => $user->id,
-                            'type' => 'inflow',
-                            'category' => 'capital_injection',
-                            'amount' => $request->working_capital,
-                            'description' => 'Initial Working Capital',
-                            'occurred_at' => Carbon::now(),
-                        ]);
-                    }
-                }
             } else {
-                // New User Registration
-                
-                // Check if phone number is taken
-                $phoneExists = User::where('phoneNumber', $request->phoneNumber)->exists();
+                $phoneExists = User::where('phone', $request->phoneNumber)->exists();
                 if ($phoneExists) {
                     return response()->json([
                         'message' => 'The phone number has already been taken.',
@@ -147,30 +109,26 @@ class AuthController extends Controller
 
                 $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
 
-                $user = User::create([
-                    'fullName' => $request->fullName,
+                $business = Business::create([
+                    'name' => $request->fullName . ' Business',
                     'email' => $request->email,
-                    'phoneNumber' => $request->phoneNumber,
-                    'password' => $request->password,
-                    'acceptTerms' => $request->acceptTerms,
-                    'otp_code' => $otp,
-                    'otp_expires_at' => Carbon::now()->addMinutes(10),
+                    'is_active' => true,
+                    'registration_number' => 'REG-' . strtoupper(Str::random(6)),
                     'working_capital' => $request->working_capital ?? 0,
                 ]);
 
-                if ($request->filled('working_capital') && $request->working_capital > 0) {
-                    Transaction::create([
-                        'user_id' => $user->id,
-                        'type' => 'inflow',
-                        'category' => 'capital_injection',
-                        'amount' => $request->working_capital,
-                        'description' => 'Initial Working Capital',
-                        'occurred_at' => Carbon::now(),
-                    ]);
-                }
+                $user = User::create([
+                    'full_name' => $request->fullName,
+                    'email' => $request->email,
+                    'phone' => $request->phoneNumber,
+                    'password' => $request->password,
+                    'otp_code' => $otp,
+                    'otp_expires_at' => Carbon::now()->addMinutes(10),
+                    'business_id' => $business->id,
+                    'role' => 'SUPER_ADMIN',
+                ]);
             }
 
-            // Send OTP Email
             Mail::to($user->email)->send(new OtpVerificationMail($otp));
 
             return response()->json([
@@ -189,30 +147,17 @@ class AuthController extends Controller
     #[OA\Post(
         path: '/auth/verify-otp',
         summary: 'Verify OTP',
-        description: 'Verify the email address using the code sent via email',
         tags: ['Authentication'],
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
                 required: ['email', 'code'],
                 properties: [
-                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'john.doe@example.com'),
+                    new OA\Property(property: 'email', type: 'string', format: 'email'),
                     new OA\Property(property: 'code', type: 'string', example: '123456')
                 ]
             )
-        ),
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: 'Verification successful',
-                content: new OA\JsonContent(ref: '#/components/schemas/TokenPair')
-            ),
-            new OA\Response(
-                response: 400,
-                description: 'Invalid code or expired',
-                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
-            )
-        ]
+        )
     )]
     public function verifyOtp(Request $request): JsonResponse
     {
@@ -227,6 +172,8 @@ class AuthController extends Controller
             return response()->json(['success' => false, 'message' => 'User not found'], 404);
         }
 
+        $user->load('business');
+
         if ($user->email_verified_at) {
             return response()->json(['success' => false, 'message' => 'Email already verified'], 400);
         }
@@ -239,31 +186,27 @@ class AuthController extends Controller
             return response()->json(['success' => false, 'message' => 'Verification code expired'], 400);
         }
 
-        // Verify user
         $user->email_verified_at = Carbon::now();
         $user->last_login = Carbon::now();
         $user->otp_code = null;
         $user->otp_expires_at = null;
         $user->save();
 
-        // Login user
-        $tokens = $this->tokenService->createTokens($user);
-
-        // Generate personalized greeting for first login
-        $greeting = $this->getTimeBasedGreeting();
-        $welcomeMessage = $greeting . ', ' . $user->fullName . '! Welcome to Cryndol.';
+        $tokens = $this->tokenService->createTokens($user, false);
 
         return response()->json([
             'success' => true,
             'message' => 'Email verified successfully',
-            'greeting' => $welcomeMessage,
             'data' => [
                 'user' => [
-                    'id' => 'user_' . $user->id,
-                    'fullName' => $user->fullName,
+                    'id' => $user->id,
+                    'fullName' => $user->full_name,
                     'email' => $user->email,
+                    'role' => $user->role,
                     'is_verified' => true,
-                    'hasBusinessProfile' => $user->hasBusinessProfile,
+                    'business_id' => $user->business_id,
+                    'permissions' => $user->permissions ?? $user->getDefaultPermissions(),
+                    'hasBusinessProfile' => (bool)($user->business?->address),
                 ],
                 'tokens' => $tokens,
             ],
@@ -271,268 +214,102 @@ class AuthController extends Controller
     }
 
     #[OA\Post(
-        path: '/auth/resend-otp',
-        summary: 'Resend OTP',
-        description: 'Resend a new verification code',
-        tags: ['Authentication'],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                required: ['email'],
-                properties: [
-                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'john.doe@example.com')
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: 'OTP resent',
-                content: new OA\JsonContent(
-                    properties: [new OA\Property(property: 'success', type: 'boolean', example: true)]
-                )
-            )
-        ]
-    )]
-    public function resendOtp(Request $request): JsonResponse
-    {
-        $request->validate(['email' => 'required|email']);
-
-        $user = User::where('email', $request->email)->first();
-
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'User not found'], 404);
-        }
-
-        if ($user->email_verified_at) {
-            return response()->json(['success' => false, 'message' => 'Email already verified'], 400);
-        }
-
-        $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
-        $user->otp_code = $otp;
-        $user->otp_expires_at = Carbon::now()->addMinutes(10);
-        $user->save();
-
-        Mail::to($user->email)->send(new OtpVerificationMail($otp));
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Verification code resent',
-        ], 200);
-    }
-
-    #[OA\Post(
         path: '/auth/login',
         summary: 'Login',
-        description: 'Authenticate user with email and password',
         tags: ['Authentication'],
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
                 required: ['email', 'password'],
                 properties: [
-                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'john.doe@example.com'),
-                    new OA\Property(property: 'password', type: 'string', format: 'password', example: 'SecurePassword123!')
+                    new OA\Property(property: 'email', type: 'string', format: 'email'),
+                    new OA\Property(property: 'password', type: 'string', format: 'password')
                 ]
             )
-        ),
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: 'Login successful',
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: 'success', type: 'boolean', example: true),
-                        new OA\Property(property: 'message', type: 'string', example: 'Login successful'),
-                        new OA\Property(
-                            property: 'data',
-                            properties: [
-                                new OA\Property(property: 'user', ref: '#/components/schemas/User'),
-                                new OA\Property(property: 'tokens', ref: '#/components/schemas/TokenPair')
-                            ]
-                        )
-                    ]
-                )
-            ),
-            new OA\Response(
-                response: 401,
-                description: 'Invalid credentials',
-                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
-            )
-        ]
+        )
     )]
     public function login(LoginRequest $request): JsonResponse
     {
+        Log::info('User found: ' . $request->email);
         try {
             $user = $this->tokenService->authenticateUser($request->email, $request->password);
+            
 
             if (!$user) {
+                Log::info('User not found: ' . $request->email);
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid credentials',
                 ], 401);
             }
 
-            // Update last login timestamp
+            $user->load('business');
             $user->last_login = Carbon::now();
             $user->save();
+            Log::info('User found: ' . $user->full_name);
 
-            $tokens = $this->tokenService->createTokens($user);
-
-            // Generate personalized greeting
-            $greeting = $this->getTimeBasedGreeting();
-            $welcomeMessage = $greeting . ', ' . $user->fullName . '! Welcome back.';
+            $tokens = $this->tokenService->createTokens($user, (bool) $request->remember);
+            Log::info('User found: ' . $user->full_name);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Login successful',
-                'greeting' => $welcomeMessage,
                 'data' => [
                     'user' => [
-                        'id' => 'user_' . $user->id,
-                        'fullName' => $user->fullName,
+                        'id' => $user->id,
+                        'fullName' => $user->full_name,
                         'email' => $user->email,
-                        'phoneNumber' => $user->phoneNumber,
-                        'hasBusinessProfile' => $user->hasBusinessProfile,
+                        'phoneNumber' => $user->phone,
+                        'role' => $user->role,
+                        'business_id' => $user->business_id,
                         'createdAt' => $user->created_at->toISOString(),
                         'updatedAt' => $user->updated_at->toISOString(),
+                        'working_capital' => (float) ($user->business?->working_capital ?? 0),
+                        'permissions' => $user->permissions ?? $user->getDefaultPermissions(),
+                        'hasBusinessProfile' => (bool)($user->business?->address),
                     ],
                     'tokens' => $tokens,
                 ],
             ], 200);
         } catch (\Exception $e) {
+            Log::info($e->getMessage());
             return $this->logAndResponseError($e, 'Login failed');
-        }
-    }
 
-    #[OA\Post(
-        path: '/auth/refresh',
-        summary: 'Refresh access token',
-        description: 'Refresh access token using a valid refresh token',
-        tags: ['Authentication'],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                required: ['refreshToken'],
-                properties: [
-                    new OA\Property(property: 'refreshToken', type: 'string', example: 'eyJhbGciOi...')
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: 'Tokens refreshed',
-                content: new OA\JsonContent(ref: '#/components/schemas/TokenPair')
-            ),
-            new OA\Response(
-                response: 401,
-                description: 'Invalid refresh token',
-                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
-            )
-        ]
-    )]
-    public function refresh(RefreshTokenRequest $request): JsonResponse
-    {
-        try {
-            $tokens = $this->tokenService->refreshAccessToken($request->refreshToken);
-
-            return response()->json([
-                'success' => true,
-                'data' => $tokens,
-            ], 200);
-        } catch (\Exception $e) {
-            return $this->logAndResponseError($e, $e->getMessage(), 401);
-        }
-    }
-
-    #[OA\Post(
-        path: '/auth/logout',
-        summary: 'Logout',
-        description: 'Revoke all tokens for the authenticated user',
-        tags: ['Authentication'],
-        security: [['bearerAuth' => []]],
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: 'Logout successful',
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: 'success', type: 'boolean', example: true),
-                        new OA\Property(property: 'message', type: 'string', example: 'Logout successful')
-                    ]
-                )
-            ),
-            new OA\Response(
-                response: 401,
-                description: 'Unauthorized',
-                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
-            )
-        ]
-    )]
-    public function logout(Request $request): JsonResponse
-    {
-        try {
-            $this->tokenService->revokeAllTokens($request->user());
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Logout successful',
-            ], 200);
-        } catch (\Exception $e) {
-            return $this->logAndResponseError($e, 'Logout failed');
         }
     }
 
     #[OA\Get(
         path: '/auth/profile',
         summary: 'Get user profile',
-        description: 'Returns the authenticated user profile (and business profile if available)',
         tags: ['Authentication'],
-        security: [['bearerAuth' => []]],
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: 'User profile',
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: 'user', ref: '#/components/schemas/User'),
-                        new OA\Property(property: 'businessProfile', ref: '#/components/schemas/BusinessProfile', nullable: true)
-                    ]
-                )
-            ),
-            new OA\Response(
-                response: 401,
-                description: 'Unauthorized',
-                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
-            )
-        ]
+        security: [['bearerAuth' => []]]
     )]
     public function profile(Request $request): JsonResponse
     {
         try {
             $user = $request->user();
-            $user->load('businessProfile');
+            $user->load('business');
 
             $responseData = [
                 'user' => [
-                    'id' => 'user_' . $user->id,
-                    'fullName' => $user->fullName,
+                    'id' => $user->id,
+                    'fullName' => $user->full_name,
                     'email' => $user->email,
-                    'phoneNumber' => $user->phoneNumber,
-                    'hasBusinessProfile' => $user->hasBusinessProfile,
-                    'createdAt' => $user->created_at->toISOString(),
-                    'updatedAt' => $user->updated_at->toISOString(),
-                    'working_capital' => (float) $user->working_capital,
+                    'phoneNumber' => $user->phone,
+                    'role' => $user->role,
+                    'createdAt' => $user->created_at?->toISOString(),
+                    'updatedAt' => $user->updated_at?->toISOString(),
+                    'permissions' => $user->permissions ?? $user->getDefaultPermissions(),
+                    'hasBusinessProfile' => (bool)($user->business?->address),
                 ],
             ];
 
-            if ($user->businessProfile) {
+            if ($user->business) {
                 $responseData['businessProfile'] = [
-                    'id' => 'business_' . $user->businessProfile->id,
-                    'businessName' => $user->businessProfile->businessName,
-                    'createdAt' => $user->businessProfile->created_at->toISOString(),
-                    'updatedAt' => $user->businessProfile->updated_at->toISOString(),
+                    'id' => $user->business->id,
+                    'businessName' => $user->business->name,
+                    'createdAt' => $user->business->created_at?->toISOString(),
+                    'updatedAt' => $user->business->updated_at?->toISOString(),
                 ];
             }
 
@@ -544,90 +321,33 @@ class AuthController extends Controller
             return $this->logAndResponseError($e, 'Failed to retrieve profile');
         }
     }
-    #[OA\Post(
-        path: '/auth/forgot-password',
-        summary: 'Forgot Password',
-        description: 'Initiate password reset process by sending an OTP to the email',
-        tags: ['Authentication'],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                required: ['email'],
-                properties: [
-                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'john.doe@example.com')
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: 'OTP sent',
-                content: new OA\JsonContent(
-                    properties: [new OA\Property(property: 'success', type: 'boolean', example: true)]
-                )
-            ),
-            new OA\Response(
-                response: 404,
-                description: 'User not found',
-                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
-            )
-        ]
-    )]
+
+    public function resendOtp(Request $request): JsonResponse
+    {
+        $request->validate(['email' => 'required|email']);
+        $user = User::where('email', $request->email)->first();
+        if (!$user) return response()->json(['success' => false, 'message' => 'User not found'], 404);
+
+        $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+        $user->update(['otp_code' => $otp, 'otp_expires_at' => Carbon::now()->addMinutes(10)]);
+        Mail::to($user->email)->send(new OtpVerificationMail($otp));
+
+        return response()->json(['success' => true, 'message' => 'Verification code resent'], 200);
+    }
+
     public function forgotPassword(Request $request): JsonResponse
     {
         $request->validate(['email' => 'required|email']);
-
         $user = User::where('email', $request->email)->first();
-
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'User not found'], 404);
-        }
+        if (!$user) return response()->json(['success' => false, 'message' => 'User not found'], 404);
 
         $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
-        $user->otp_code = $otp;
-        $user->otp_expires_at = Carbon::now()->addMinutes(10);
-        $user->save();
-
+        $user->update(['otp_code' => $otp, 'otp_expires_at' => Carbon::now()->addMinutes(10)]);
         Mail::to($user->email)->send(new \App\Mail\PasswordResetMail($otp));
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Password reset code sent to your email',
-        ], 200);
+        return response()->json(['success' => true, 'message' => 'Password reset code sent to your email'], 200);
     }
 
-    #[OA\Post(
-        path: '/auth/reset-password',
-        summary: 'Reset Password',
-        description: 'Reset password using the OTP',
-        tags: ['Authentication'],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                required: ['email', 'code', 'password', 'password_confirmation'],
-                properties: [
-                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'john.doe@example.com'),
-                    new OA\Property(property: 'code', type: 'string', example: '123456'),
-                    new OA\Property(property: 'password', type: 'string', format: 'password', example: 'NewSecurePassword123!'),
-                    new OA\Property(property: 'password_confirmation', type: 'string', format: 'password', example: 'NewSecurePassword123!')
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: 'Password reset successful',
-                content: new OA\JsonContent(
-                    properties: [new OA\Property(property: 'success', type: 'boolean', example: true)]
-                )
-            ),
-            new OA\Response(
-                response: 400,
-                description: 'Invalid code or expired',
-                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
-            )
-        ]
-    )]
     public function resetPassword(Request $request): JsonResponse
     {
         $request->validate([
@@ -637,172 +357,17 @@ class AuthController extends Controller
         ]);
 
         $user = User::where('email', $request->email)->first();
+        if (!$user) return response()->json(['success' => false, 'message' => 'User not found'], 404);
+        if (!$user->otp_code || $user->otp_code !== $request->code) return response()->json(['success' => false, 'message' => 'Invalid code'], 400);
 
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'User not found'], 404);
-        }
-
-        if (!$user->otp_code || $user->otp_code !== $request->code) {
-            return response()->json(['success' => false, 'message' => 'Invalid verification code'], 400);
-        }
-
-        if (Carbon::now()->gt($user->otp_expires_at)) {
-            return response()->json(['success' => false, 'message' => 'Verification code expired'], 400);
-        }
-
-        // Password is automatically hashed by the 'hashed' cast in the User model
-        $user->password = $request->password;
-        $user->otp_code = null;
-        $user->otp_expires_at = null;
-        $user->save();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Password reset successfully. You can now login with your new password.',
-        ], 200);
+        $user->update(['password' => $request->password, 'otp_code' => null, 'otp_expires_at' => null]);
+        return response()->json(['success' => true, 'message' => 'Password reset successful'], 200);
     }
 
-    #[OA\Post(
-        path: '/auth/request-deletion-otp',
-        summary: 'Request Account Deletion OTP',
-        description: 'Send an OTP to the user email for account deletion verification',
-        tags: ['Authentication'],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                required: ['email'],
-                properties: [
-                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'john.doe@example.com')
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: 'OTP sent',
-                content: new OA\JsonContent(
-                    properties: [new OA\Property(property: 'success', type: 'boolean', example: true)]
-                )
-            ),
-            new OA\Response(
-                response: 404,
-                description: 'User not found',
-                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
-            )
-        ]
-    )]
-    public function requestDeletionOtp(Request $request): JsonResponse
+    public function logout(Request $request): JsonResponse
     {
-        $request->validate(['email' => 'required|email']);
-
-        $user = User::where('email', $request->email)->first();
-
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'User not found'], 404);
-        }
-
-        $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
-        $user->otp_code = $otp;
-        $user->otp_expires_at = Carbon::now()->addMinutes(10);
-        $user->save();
-
-        Mail::to($user->email)->send(new OtpVerificationMail($otp));
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Verification code sent to your email',
-        ], 200);
+        $request->user()->tokens()->delete();
+        return response()->json(['success' => true, 'message' => 'Logout successful'], 200);
     }
 
-    #[OA\Post(
-        path: '/auth/confirm-deletion',
-        summary: 'Confirm Account Deletion',
-        description: 'Permanently delete account using the OTP',
-        tags: ['Authentication'],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                required: ['email', 'code'],
-                properties: [
-                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'john.doe@example.com'),
-                    new OA\Property(property: 'code', type: 'string', example: '123456')
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: 'Account deleted successfully',
-                content: new OA\JsonContent(
-                    properties: [new OA\Property(property: 'success', type: 'boolean', example: true)]
-                )
-            ),
-            new OA\Response(
-                response: 400,
-                description: 'Invalid code or expired',
-                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
-            )
-        ]
-    )]
-    public function confirmDeletion(Request $request): JsonResponse
-    {
-        $request->validate([
-            'email' => 'required|email',
-            'code' => 'required|string|size:6',
-        ]);
-
-        $user = User::where('email', $request->email)->first();
-
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'User not found'], 404);
-        }
-
-        if (!$user->otp_code || $user->otp_code !== $request->code) {
-            return response()->json(['success' => false, 'message' => 'Invalid verification code'], 400);
-        }
-
-        if (Carbon::now()->gt($user->otp_expires_at)) {
-            return response()->json(['success' => false, 'message' => 'Verification code expired'], 400);
-        }
-
-        // Revoke all tokens
-        if ($this->tokenService) {
-            $this->tokenService->revokeAllTokens($user);
-        }
-
-        // Delete user
-        $user->delete();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Account deleted successfully.',
-        ], 200);
-    }
-
-    /**
-     * Get time-based greeting
-     */
-    private function getTimeBasedGreeting(): string
-    {
-        $hour = Carbon::now()->hour;
-
-        if ($hour >= 5 && $hour < 12) {
-            return 'Good morning';
-        } elseif ($hour >= 12 && $hour < 17) {
-            return 'Good afternoon';
-        } elseif ($hour >= 17 && $hour < 21) {
-            return 'Good evening';
-        } else {
-            return 'Good night';
-        }
-    }
-
-    public function webhooktest(Request $request){
-        Log::info("this is a webhook test", ['request_data' => $request->all()]);
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Webhook test received',
-        ], 200);
-    }
 }

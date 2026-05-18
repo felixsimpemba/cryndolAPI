@@ -12,9 +12,8 @@ class PaymentReceivedMail extends Mailable
     use Queueable, SerializesModels;
 
     public $loan;
-    public $borrower;
+    public $customer;
     public $business;
-    public $lender;
     public $paymentAmount;
     public $paymentDate;
     public $balance;
@@ -25,9 +24,8 @@ class PaymentReceivedMail extends Mailable
     public function __construct(Loan $loan, $paymentAmount, $paymentDate, $balance)
     {
         $this->loan = $loan;
-        $this->borrower = $loan->borrower;
-        $this->lender = $loan->user;
-        $this->business = $loan->user->businessProfile->businessName ?? 'Cryndol';
+        $this->customer = $loan->customer;
+        $this->business = $loan->business->name ?? 'Cryndol';
         $this->paymentAmount = $paymentAmount;
         $this->paymentDate = $paymentDate;
         $this->balance = $balance;

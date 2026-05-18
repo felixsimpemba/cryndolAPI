@@ -12,9 +12,8 @@ class LoanApprovedMail extends Mailable
     use Queueable, SerializesModels;
 
     public $loan;
-    public $borrower;
+    public $customer;
     public $business;
-    public $lender;
     public $monthlyPayment;
 
     /**
@@ -23,14 +22,13 @@ class LoanApprovedMail extends Mailable
     public function __construct(Loan $loan)
     {
         $this->loan = $loan;
-        $this->borrower = $loan->borrower;
-        $this->lender = $loan->user;
-        $this->business = $loan->user->businessProfile->businessName ?? 'Cryndol';
+        $this->customer = $loan->customer;
+        $this->business = $loan->business->name ?? 'Cryndol';
 
-        // Calculate monthly payment
-        $totalInterest = ($loan->principal * $loan->interestRate * $loan->termMonths) / 100;
-        $totalAmount = $loan->principal + $totalInterest;
-        $this->monthlyPayment = $totalAmount / $loan->termMonths;
+        // Simplified calculation for the mail
+        $totalInterest = ($loan->principal_amount * ($loan->interest_rate / 100));
+        $totalAmount = $loan->principal_amount + $totalInterest;
+        $this->monthlyPayment = ($loan->loan_term_months > 0) ? ($totalAmount / $loan->loan_term_months) : $totalAmount;
     }
 
     /**

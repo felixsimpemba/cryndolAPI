@@ -65,8 +65,8 @@ class CapitalController extends Controller
         $user->working_capital += $amount;
         $user->save();
 
-        // Create Transaction
         Transaction::create([
+            'business_id' => $user->business_id,
             'user_id' => $user->id,
             'type' => 'inflow',
             'category' => 'capital_injection',
@@ -145,8 +145,8 @@ class CapitalController extends Controller
         $user->working_capital = $newAmount;
         $user->save();
 
-        // Create transaction for the difference
         Transaction::create([
+            'business_id' => $user->business_id,
             'user_id' => $user->id,
             'type' => $diff > 0 ? 'inflow' : 'outflow',
             'category' => $diff > 0 ? 'capital_injection' : 'capital_withdrawal',

@@ -47,7 +47,7 @@ class LoanResource extends Resource
                     ->required()
                     ->numeric()
                     ->default(0.00),
-                Forms\Components\TextInput::make('loan_product_id')
+                Forms\Components\TextInput::make('loan_template_id')
                     ->numeric(),
             ]);
     }
@@ -87,7 +87,7 @@ class LoanResource extends Resource
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('loan_product_id')
+                Tables\Columns\TextColumn::make('loan_template_id')
                     ->numeric()
                     ->sortable(),
             ])
