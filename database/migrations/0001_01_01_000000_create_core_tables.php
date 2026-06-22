@@ -52,6 +52,12 @@ return new class extends Migration
 
         Schema::create('system_settings', function (Blueprint $table) {
             $table->id();
+            $table->string('key')->unique();
+            $table->text('value')->nullable();
+            $table->string('group')->index(); // workflow, security, notification
+            $table->string('type')->default('string'); // string, boolean, integer, json
+            $table->text('description')->nullable();
+            $table->boolean('is_public')->default(false); // exposed to frontend?
             $table->timestamps();
         });
  

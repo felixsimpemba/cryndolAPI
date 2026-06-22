@@ -120,11 +120,11 @@ Route::middleware(['auth:sanctum', 'throttle:1000,60'])->group(function () {
     // Loan Template Routes
     Route::apiResource('loan-templates', \App\Http\Controllers\LoanTemplateController::class);
 
-    // Settings
+    // Settings — unified GET + PUT for all settings data
     Route::prefix('settings')->group(function () {
         Route::get('/', [\App\Http\Controllers\SettingsController::class, 'getSettings']);
-        Route::put('/profile', [\App\Http\Controllers\SettingsController::class, 'updateProfile']);
-        Route::put('/system', [\App\Http\Controllers\SettingsController::class, 'updateSystemSettings']);
+        Route::put('/', [\App\Http\Controllers\SettingsController::class, 'saveSettings']);   // ← unified save
+        Route::put('/profile', [\App\Http\Controllers\SettingsController::class, 'updateProfile']); // kept for FormData logo uploads
         Route::put('/password', [\App\Http\Controllers\SettingsController::class, 'updatePassword']);
         Route::put('/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications']);
 
